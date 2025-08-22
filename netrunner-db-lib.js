@@ -1,5 +1,5 @@
 /**
- * Netrunner DB Editor - Core Library v0.9
+ * Netrunner DB Editor - Core Library v0.9.1
  * Contains all stable application logic for the card editor.
  */
 
@@ -79,7 +79,8 @@ window.NetrunnerDB = {
         reader.onload = (e) => {
             try {
                 const content = e.target.result;
-                const executionContent = `var runner = "runner"; var corp = "corp";\n${content}\n; return cardSet || coreSet;`;
+                // Define all potential global variables the scripts might need.
+                const executionContent = `var runner = "runner"; var corp = "corp"; var setIdentifiers = [];\n${content}\n; return cardSet || coreSet;`;
                 const func = new Function(executionContent);
                 const loadedData = func();
                 if (Array.isArray(loadedData)) {
