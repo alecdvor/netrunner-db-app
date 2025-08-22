@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Netrunner Card Database Editor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Custom scrollbar for a better look */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #1a202c; }
+        ::-webkit-scrollbar-thumb { background: #4a5568; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #718096; }
+        .property-key { font-weight: 600; color: #a0aec0; }
+        .loader {
+            border: 2px solid #f3f3f3; border-top: 2px solid #3498db;
+            border-radius: 50%; width: 16px; height: 16px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        /* Styles for Block Programmer */
+        .block {
+            padding: 8px; margin: 4px 0; border-radius: 4px;
+            border: 1px solid #4a5568; background-color: #2d3748;
+            min-height: 38px;
+        }
+        .block-group-title { font-weight: bold; color: #a0aec0; margin-top: 1rem; margin-bottom: 0.5rem; }
+        .block-control { background-color: #5a4b8c; }
+        .block-check { background-color: #2c7a7b; }
+        .block-action { background-color: #975a16; }
+        .block-value { background-color: #2a4365; }
+        .block-operator { background-color: #4a5568; }
+        .block-variable { background-color: #553c9a; }
+        .block-palette .block { cursor: grab; }
+        .block-canvas .block { position: relative; cursor: grab; }
+        .block-header { font-weight: bold; margin-bottom: 4px; display: flex; align-items: center; gap: 4px; }
+        .block-content { padding-left: 20px; border-left: 2px solid #4a5568; min-height: 30px; position: relative; }
+        .block-content.inline { display: inline-flex; padding: 0; border: none; min-height: 30px; vertical-align: middle; }
+        .block-input {
+            background-color: #1a202c; border: 1px solid #4a5568;
+            border-radius: 4px; padding: 2px 4px; margin: 0 4px;
+            min-width: 50px; display: inline-block; color: #cbd5e0;
+        }
+        .drop-target.drop-zone { border: 2px dashed #63b3ed; background-color: rgba(99, 179, 237, 0.2); }
+        .drop-target:empty::before {
+            content: 'Drop Block Here'; color: #4a5568; font-style: italic;
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+        .block-remove-btn {
+            position: absolute; top: 4px; right: 4px;
+            width: 18px; height: 18px; background-color: #c53030;
+            color: white; border: none; border-radius: 50%;
+            cursor: pointer; font-size: 12px; line-height: 18px; text-align: center;
+            display: none; z-index: 10;
+        }
+        .block:hover .block-remove-btn { display: block; }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-200 flex flex-col h-screen">
+
+    <!-- Header -->
+    <header class="bg-gray-800 shadow-md p-4 flex flex-col sm:flex-row justify-between items-center z-10 gap-4">
+        <h1 class="text-2xl font-bold text-cyan-400">Netrunner DB Editor</h1>
+        <div class="flex items-center space-x-4">
+            <button id="start-new-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg">Start New</button>
+            <label for="file-upload" class="cursor-pointer bg-cyan-600 hover:bg-cyan-700 text-white font-semibold py-2 px-4 rounded-lg">Load .js File</label>
+            <input id="file-upload" type="file" class="hidden" accept=".js">
+            <button id="file-settings-btn" class="bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2 px-4 rounded-lg">File Settings</button>
+            <button id="download-btn" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg disabled:bg-gray-600 disabled:cursor-not-allowed" disabled>Save & Download</button>
+        </div>
+    </header>
+
+    <!-- AI Tools Bar -->
+    <div id="ai-tools-bar" class="bg-gray-800/50 p-3 flex flex-col sm:flex-row items-center justify-center gap-3 border-t border-b border-gray-700">
+        <label for="ai-prompt" class="font-semibold text-cyan-400">✨ AI Card Generation:</label>
+        <input type="text" id="ai-prompt" placeholder="e.g., a sneaky runner event that messes with corp credits" class="flex-grow bg-gray-700 border border-gray-600 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-gray-200 w-full sm:w-auto">
+        <button id="generate-card-btn" class="bg-cyan-600 hover:bg-cyan-700 text-white font-semibold py-2 px-4 rounded-lg w-full sm:w-auto">Generate Card</button>
+    </div>
+
+    <!-- Main Content -->
+    <main class="flex flex-1 overflow-hidden">
+        <!-- Left Panel: Card List -->
+        <div id="card-list-container" class="w-1/3 bg-gray-800 border-r border-gray-700 flex flex-col">
+            <div class="p-4 border-b border-gray-700 flex justify-between items-center">
+                <h2 class="text-xl font-semibold">Cards</h2>
+                <button id="add-card-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-lg text-sm disabled:bg-gray-600 disabled:cursor-not-allowed" disabled>+</button>
+            </div>
+            <div id="card-list" class="overflow-y-auto flex-1 p-2">
+                <p class="text-gray-500 text-center p-4">Load a file or start new to see cards.</p>
+            </div>
+        </div>
+
+        <!-- Right Panel: Card Editor -->
+        <div id="editor-container" class="w-2/3 bg-gray-900 flex flex-col overflow-hidden">
+            <div id="editor-header" class="p-4 border-b border-gray-700 flex justify-between items-center hidden">
+                <h2 id="editor-title" class="text-xl font-semibold">Card Details</h2>
+                <div>
+                    <button id="save-card-btn" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg">Save Changes</button>
+                    <button id="manage-fields-btn" class="bg-yellow-600 hover:bg-yellow-700 text-white font-semibold py-2 px-4 rounded-lg ml-2">Manage Fields</button>
+                    <button id="delete-card-btn" class="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg ml-2">Delete Card</button>
+                </div>
+            </div>
+            <div id="editor-content" class="overflow-y-auto flex-1 p-6">
+                <div id="welcome-message" class="text-center text-gray-500">
+                    <p class="text-lg">Welcome!</p>
+                    <p>Load a card file or start a new one to begin editing.</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Message Box -->
+    <div id="message-box" class="fixed bottom-5 right-5 bg-gray-700 text-white py-3 px-5 rounded-lg shadow-lg transition-opacity duration-300 opacity-0">
+        <p id="message-text"></p>
+    </div>
+
+    <!-- Manage Fields Modal -->
+    <div id="fields-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center hidden z-50">
+        <div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4">
+            <div class="p-4 border-b border-gray-700 flex justify-between items-center"><h3 class="text-lg font-semibold">Manage Card Fields</h3><button id="close-modal-btn" class="text-gray-400 hover:text-white">&times;</button></div>
+            <div class="p-6 max-h-96 overflow-y-auto"><div id="modal-fields-list" class="space-y-2 mb-4"></div><div class="flex space-x-2"><select id="new-field-select" class="flex-grow bg-gray-700 border border-gray-600 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-gray-200"></select><button id="add-field-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg">Add</button></div></div>
+            <div class="p-4 bg-gray-800 border-t border-gray-700 flex justify-end"><button id="apply-fields-btn" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg">Apply Changes</button></div>
+        </div>
+    </div>
+
+    <!-- File Settings Modal -->
+    <div id="file-settings-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center hidden z-50">
+        <div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4">
+            <div class="p-4 border-b border-gray-700 flex justify-between items-center">
+                <h3 class="text-lg font-semibold">File Settings</h3>
+                <button id="close-file-settings-btn" class="text-gray-400 hover:text-white">&times;</button>
+            </div>
+            <div class="p-6 space-y-4">
+                <div>
+                    <label for="data-var-name" class="block mb-1 font-semibold text-gray-300">Data Variable Name</label>
+                    <input type="text" id="data-var-name" class="w-full bg-gray-700 border border-gray-600 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-gray-200">
+                </div>
+                <div>
+                    <label for="set-identifier-string" class="block mb-1 font-semibold text-gray-300">Set Identifier String</label>
+                    <input type="text" id="set-identifier-string" class="w-full bg-gray-700 border border-gray-600 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-gray-200">
+                </div>
+            </div>
+            <div class="p-4 bg-gray-800 border-t border-gray-700 flex justify-end">
+                <button id="save-file-settings-btn" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg">Save Settings</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Block Programmer Modal -->
+    <div id="block-builder-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center hidden z-50">
+        <div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-6xl mx-4 flex" style="height: 85vh;">
+            <!-- Block Palette -->
+            <div class="w-1/3 bg-gray-900 p-4 overflow-y-auto">
+                <h3 class="text-lg font-semibold mb-4 text-cyan-400">Blocks</h3>
+                <div id="block-palette"></div>
+            </div>
+            <!-- Block Canvas -->
+            <div class="w-2/3 flex flex-col">
+                <div class="p-4 border-b border-gray-700 flex justify-between items-center">
+                    <h3 id="block-builder-title" class="text-lg font-semibold">Logic Builder</h3>
+                    <button id="close-block-builder-btn" class="text-gray-400 hover:text-white">&times;</button>
+                </div>
+                <div id="block-canvas" class="p-4 flex-1 overflow-y-auto">
+                    <div class="block" data-block-type="root">
+                        <div class="block-header">Resolve: function(card) {</div>
+                        <div class="block-content drop-target" id="root-block-content"></div>
+                        <div class="block-header">}</div>
+                    </div>
+                </div>
+                <div class="p-4 bg-gray-900 border-t border-gray-700 flex justify-end">
+                    <button id="apply-code-btn" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg">Apply Code</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/gh/alecdvor/netrunner-db-app@main/netrunner-db-lib.js"></script>
+    <script>
+        /**
+         * Netrunner DB Editor - Main Application File v1.2
+         * Handles event listeners and new feature development.
+         */
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            NetrunnerDB.cacheDom();
+            const dom = NetrunnerDB.dom;
+
+            // --- Attach Event Listeners to Core Functions ---
+            dom.fileUpload.addEventListener('change', (e) => NetrunnerDB.handleFileUpload(e));
+            dom.startNewBtn.addEventListener('click', () => NetrunnerDB.handleStartNewFile());
+            dom.downloadBtn.addEventListener('click', () => NetrunnerDB.handleFileDownload());
+            dom.addCardBtn.addEventListener('click', () => NetrunnerDB.handleAddCard());
+            dom.saveCardBtn.addEventListener('click', () => NetrunnerDB.handleSaveChanges());
+            dom.deleteCardBtn.addEventListener('click', () => NetrunnerDB.handleDeleteCard());
+
+            // --- Field Management Modal Listeners ---
+            dom.manageFieldsBtn.addEventListener('click', () => NetrunnerDB.openManageFieldsModal());
+            dom.closeModalBtn.addEventListener('click', () => dom.fieldsModal.classList.add('hidden'));
+            dom.fieldsModal.addEventListener('click', (e) => { if (e.target === dom.fieldsModal) dom.fieldsModal.classList.add('hidden'); });
+            dom.addFieldBtn.addEventListener('click', () => NetrunnerDB.handleAddFieldToModal());
+            dom.applyFieldsBtn.addEventListener('click', () => NetrunnerDB.handleApplyFieldChanges());
+
+            // --- File Settings Modal Listeners ---
+            dom.fileSettingsBtn.addEventListener('click', () => NetrunnerDB.openFileSettingsModal());
+            dom.closeFileSettingsBtn.addEventListener('click', () => dom.fileSettingsModal.classList.add('hidden'));
+            dom.fileSettingsModal.addEventListener('click', (e) => { if (e.target === dom.fileSettingsModal) dom.fileSettingsModal.classList.add('hidden'); });
+            dom.saveFileSettingsBtn.addEventListener('click', () => NetrunnerDB.saveFileSettings());
+
+            // --- Block Programmer ---
+            const blockBuilderModal = document.getElementById('block-builder-modal');
+            const closeBlockBuilderBtn = document.getElementById('close-block-builder-btn');
+            const applyCodeBtn = document.getElementById('apply-code-btn');
+            const blockPalette = document.getElementById('block-palette');
+            const blockCanvas = document.getElementById('block-canvas');
+
+            closeBlockBuilderBtn.addEventListener('click', () => blockBuilderModal.classList.add('hidden'));
+            applyCodeBtn.addEventListener('click', applyGeneratedCode);
+
+            // --- Block Definitions ---
+            const BLOCKS = {
+                control: [
+                    { type: 'if', label: 'If', content: `if (<div class="block-content drop-target inline" data-drop-type="condition"></div>) { <div class="block-content drop-target" data-drop-type="action"></div> }`},
+                    { type: 'else-if', label: 'Else If', content: `else if (<div class="block-content drop-target inline" data-drop-type="condition"></div>) { <div class="block-content drop-target" data-drop-type="action"></div> }`},
+                    { type: 'else', label: 'Else', content: `else { <div class="block-content drop-target" data-drop-type="action"></div> }`},
+                ],
+                checks: [
+                    { type: 'checkCardType', label: 'Check Card Type', content: `CheckCardType(<div contenteditable="true" class="block-input inline">card</div>, [<div contenteditable="true" class="block-input inline">"program"</div>])`},
+                    { type: 'checkSubType', label: 'Check SubType', content: `CheckSubType(<div contenteditable="true" class="block-input inline">card</div>, <div contenteditable="true" class="block-input inline">"Virus"</div>)`},
+                    { type: 'checkCredits', label: 'Check Credits', content: `CheckCredits(<div contenteditable="true" class="block-input inline">runner</div>, <div contenteditable="true" class="block-input inline">1</div>)`},
+                    { type: 'checkTags', label: 'Check Tags', content: `CheckTags(<div contenteditable="true" class="block-input inline">1</div>)`},
+                    { type: 'checkEncounter', label: 'Check Encounter', content: `CheckEncounter()`},
+                    { type: 'checkCounters', label: 'Check Counters', content: `CheckCounters(<div contenteditable="true" class="block-input inline">this</div>, <div contenteditable="true" class="block-input inline">"virus"</div>, <div contenteditable="true" class="block-input inline">1</div>)`},
+                    { type: 'checkAccessing', label: 'Check Accessing', content: `CheckAccessing()`},
+                    { type: 'checkInstalled', label: 'Check Installed', content: `CheckInstalled(<div contenteditable="true" class="block-input inline">this</div>)`},
+                    { type: 'checkRunning', label: 'Check Running', content: `CheckRunning()`},
+                ],
+                actions: [
+                    { type: 'trash', label: 'Trash Card', content: `Trash(<div contenteditable="true" class="block-input inline">card</div>, <div contenteditable="true" class="block-input inline">true</div>)`},
+                    { type: 'gainCredits', label: 'Gain Credits', content: `GainCredits(<div contenteditable="true" class="block-input inline">runner</div>, <div contenteditable="true" class="block-input inline">1</div>)`},
+                    { type: 'loseCredits', label: 'Lose Credits', content: `LoseCredits(<div contenteditable="true" class="block-input inline">runner</div>, <div contenteditable="true" class="block-input inline">1</div>)`},
+                    { type: 'draw', label: 'Draw Cards', content: `Draw(<div contenteditable="true" class="block-input inline">runner</div>, <div contenteditable="true" class="block-input inline">1</div>)`},
+                    { type: 'addTags', label: 'Add Tags', content: `AddTags(<div contenteditable="true" class="block-input inline">1</div>)`},
+                    { type: 'endRun', label: 'End the Run', content: `EndTheRun()`},
+                    { type: 'damage', label: 'Do Damage', content: `Damage("<div contenteditable="true" class="block-input inline">net</div>", <div contenteditable="true" class="block-input inline">1</div>, <div contenteditable="true" class="block-input inline">true</div>)`},
+                    { type: 'addCounters', label: 'Add Counters', content: `AddCounters(<div contenteditable="true" class="block-input inline">this</div>, <div contenteditable="true" class="block-input inline">"virus"</div>, <div contenteditable="true" class="block-input inline">1</div>)`},
+                    { type: 'removeCounters', label: 'Remove Counters', content: `RemoveCounters(<div contenteditable="true" class="block-input inline">this</div>, <div contenteditable="true" class="block-input inline">"virus"</div>, <div contenteditable="true" class="block-input inline">1</div>)`},
+                    { type: 'derez', label: 'Derez', content: `Derez(<div contenteditable="true" class="block-input inline">this.host</div>)`},
+                    { type: 'bypass', label: 'Bypass Ice', content: `Bypass()`},
+                    { type: 'jackOut', label: 'Jack Out', content: `JackOut()`},
+                    { type: 'shuffle', label: 'Shuffle', content: `Shuffle(<div contenteditable="true" class="block-input inline">runner.stack</div>)`},
+                ],
+                values: [
+                    { type: 'string', label: 'String', content: `"<div contenteditable="true" class="block-input inline">text</div>"`},
+                    { type: 'number', label: 'Number', content: `<div contenteditable="true" class="block-input inline">1</div>`},
+                    { type: 'boolean', label: 'Boolean', content: `<div contenteditable="true" class="block-input inline">true</div>`},
+                ],
+                operators: [
+                    { type: 'equals', label: '==', content: `<div class="block-content drop-target inline"></div> == <div class="block-content drop-target inline"></div>`},
+                    { type: 'add', label: '+', content: `<div class="block-content drop-target inline"></div> + <div class="block-content drop-target inline"></div>`},
+                    { type: 'subtract', label: '-', content: `<div class="block-content drop-target inline"></div> - <div class="block-content drop-target inline"></div>`},
+                    { type: 'multiply', label: '*', content: `<div class="block-content drop-target inline"></div> * <div class="block-content drop-target inline"></div>`},
+                ],
+                variables: [
+                    { type: 'varCard', label: 'card', content: `card` },
+                    { type: 'varThis', label: 'this', content: `this` },
+                    { type: 'varCorpRnD', label: 'corp.RnD', content: `corp.RnD` },
+                    { type: 'varRunnerHeap', label: 'runner.heap', content: `runner.heap` },
+                    { type: 'varAccessingCard', label: 'accessingCard', content: `accessingCard` },
+                ]
+            };
+
+            // --- Populate Block Palette ---
+            for (const group in BLOCKS) {
+                const title = document.createElement('h4');
+                title.className = 'block-group-title';
+                title.textContent = group.charAt(0).toUpperCase() + group.slice(1);
+                blockPalette.appendChild(title);
+                BLOCKS[group].forEach(blockDef => {
+                    const blockEl = createBlockElement(blockDef);
+                    blockPalette.appendChild(blockEl);
+                });
+            }
+
+            // --- Drag and Drop Logic ---
+            let draggedBlock = null;
+
+            function handleDragStart(e) {
+                draggedBlock = e.target.closest('.block');
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', draggedBlock.dataset.blockType);
+                setTimeout(() => {
+                    draggedBlock.style.opacity = '0.5';
+                }, 0);
+            }
+            
+            function handleDragEnd(e) {
+                if (draggedBlock) {
+                    draggedBlock.style.opacity = '1';
+                    // Check if dropped outside the modal to remove
+                    const modalRect = blockBuilderModal.querySelector('.bg-gray-800').getBoundingClientRect();
+                    if (e.clientX < modalRect.left || e.clientX > modalRect.right || e.clientY < modalRect.top || e.clientY > modalRect.bottom) {
+                        if (blockCanvas.contains(draggedBlock)) {
+                            draggedBlock.remove();
+                        }
+                    }
+                }
+                draggedBlock = null;
+            }
+            
+            document.addEventListener('dragend', handleDragEnd);
+
+            blockCanvas.addEventListener('dragover', handleDragOver);
+            blockCanvas.addEventListener('dragleave', handleDragLeave);
+            blockCanvas.addEventListener('drop', handleDrop);
+
+            function handleDragOver(e) {
+                e.preventDefault();
+                const target = e.target.closest('.drop-target');
+                if (target) target.classList.add('drop-zone');
+            }
+
+            function handleDragLeave(e) {
+                const target = e.target.closest('.drop-target');
+                if (target) target.classList.remove('drop-zone');
+            }
+
+            function handleDrop(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                const target = e.target.closest('.drop-target');
+                if (target && draggedBlock) {
+                    // If moving an existing block from the canvas, just move it
+                    if (blockCanvas.contains(draggedBlock)) {
+                        target.appendChild(draggedBlock);
+                    } else { // Otherwise, clone from palette
+                        const newBlock = draggedBlock.cloneNode(true);
+                        newBlock.setAttribute('draggable', 'true');
+                        const removeBtn = document.createElement('button');
+                        removeBtn.innerHTML = '&times;';
+                        removeBtn.className = 'block-remove-btn';
+                        removeBtn.onclick = () => newBlock.remove();
+                        newBlock.appendChild(removeBtn);
+                        target.appendChild(newBlock);
+                    }
+                }
+                document.querySelectorAll('.drop-zone').forEach(el => el.classList.remove('drop-zone'));
+            }
+            
+            function createBlockElement(blockDef) {
+                const blockEl = document.createElement('div');
+                const groupClass = Object.keys(BLOCKS).find(key => BLOCKS[key].some(b => b.type === blockDef.type));
+                blockEl.className = `block block-${groupClass}`;
+                blockEl.dataset.blockType = blockDef.type;
+                blockEl.innerHTML = `<div class="block-header">${blockDef.label}</div><div class="block-body">${blockDef.content || ''}</div>`;
+                blockEl.setAttribute('draggable', 'true');
+                blockEl.addEventListener('dragstart', handleDragStart);
+                return blockEl;
+            }
+
+            // --- Code Generation Logic ---
+            function applyGeneratedCode() {
+                const rootContent = document.getElementById('root-block-content');
+                let code = generateCodeFromBlocks(rootContent, 1);
+                const fieldKey = NetrunnerDB.currentlyBuildingField;
+                const targetInput = NetrunnerDB.dom.editorContent.querySelector(`[name="${fieldKey}"]`);
+                if (targetInput) {
+                    const functionWrapper = `{ Resolve: function(card) {\n${code}\n} }`;
+                    targetInput.value = NetrunnerDB.objectToString(new Function(`return ${functionWrapper}`)(), 2);
+                }
+                blockBuilderModal.classList.add('hidden');
+                NetrunnerDB.showMessage('Code applied from builder!', 'success');
+            }
+
+            function generateCodeFromBlocks(container, indentLevel) {
+                let code = '';
+                const indent = '    '.repeat(indentLevel);
+                container.childNodes.forEach(node => {
+                    if (node.nodeType === Node.ELEMENT_NODE && node.classList.contains('block')) {
+                        code += indent + parseBlock(node, indentLevel) + '\n';
+                    }
+                });
+                return code;
+            }
+
+            function parseBlock(blockEl, indentLevel) {
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = blockEl.querySelector('.block-body').innerHTML;
+                
+                // Process drop targets first
+                const dropTargets = Array.from(tempDiv.querySelectorAll('.drop-target'));
+                for (const target of dropTargets) {
+                    const originalBlock = blockEl.querySelector(`[data-drop-type="${target.dataset.dropType}"]`);
+                    let nestedCode = generateCodeFromBlocks(originalBlock, indentLevel + 1).trim();
+                    if (target.classList.contains('inline')) {
+                        nestedCode = nestedCode.replace(/\s+/g, ' '); // Condense to one line
+                    } else if (nestedCode) {
+                        nestedCode = `\n${nestedCode}${'    '.repeat(indentLevel)}`;
+                    }
+                    target.replaceWith(nestedCode || '/* empty */');
+                }
+
+                // Process contenteditable inputs
+                const inputs = Array.from(tempDiv.querySelectorAll('.block-input'));
+                const originalInputs = Array.from(blockEl.querySelectorAll('.block-input'));
+                for (let i = 0; i < inputs.length; i++) {
+                    inputs[i].replaceWith(originalInputs[i].textContent);
+                }
+                
+                let codeString = tempDiv.textContent.trim();
+                const type = blockEl.dataset.blockType;
+                if (['checkCardType', 'checkSubType', 'gainCredits', 'loseCredits', 'draw', 'addTags', 'damage', 'addCounters', 'removeCounters', 'trash', 'derez', 'shuffle', 'endRun', 'bypass', 'jackOut'].includes(type)) {
+                    codeString += ';';
+                }
+                return codeString;
+            }
+        });
+    </script>
+</body>
+</html>
