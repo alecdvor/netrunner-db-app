@@ -1,5 +1,5 @@
 /**
- * Netrunner DB Editor - Core Library v0.9.1
+ * Netrunner DB Editor - Core Library v1.2
  * Contains all stable application logic for the card editor.
  */
 
@@ -12,7 +12,11 @@ window.NetrunnerDB = {
     cardData: [],
     currentCardIndex: null,
     fileName: 'edited_cards.js',
-    currentlyBuildingField: null, // Holds the key of the field being edited by the block builder
+    fileSettings: {
+        dataVariableName: 'coreSet',
+        setIdentifier: 'undefined',
+    },
+    currentlyBuildingField: null,
 
     // --- CONSTANTS ---
     ALL_POSSIBLE_FIELDS: [
@@ -57,6 +61,12 @@ window.NetrunnerDB = {
         this.dom.applyFieldsBtn = document.getElementById('apply-fields-btn');
         this.dom.blockBuilderModal = document.getElementById('block-builder-modal');
         this.dom.closeBlockBuilderBtn = document.getElementById('close-block-builder-btn');
+        this.dom.fileSettingsBtn = document.getElementById('file-settings-btn');
+        this.dom.fileSettingsModal = document.getElementById('file-settings-modal');
+        this.dom.closeFileSettingsBtn = document.getElementById('close-file-settings-btn');
+        this.dom.dataVarNameInput = document.getElementById('data-var-name');
+        this.dom.setIdentifierInput = document.getElementById('set-identifier-string');
+        this.dom.saveFileSettingsBtn = document.getElementById('save-file-settings-btn');
     },
 
     // --- FILE HANDLING ---
@@ -64,6 +74,7 @@ window.NetrunnerDB = {
         this.cardData = [];
         this.currentCardIndex = null;
         this.fileName = 'new_card_set.js';
+        this.fileSettings = { dataVariableName: 'coreSet', setIdentifier: 'undefined' };
         this.resetEditor();
         this.renderCardList();
         this.dom.downloadBtn.disabled = false;
@@ -79,20 +90,29 @@ window.NetrunnerDB = {
         reader.onload = (e) => {
             try {
                 const content = e.target.result;
-                // Define all potential global variables the scripts might need.
-                const executionContent = `var runner = "runner"; var corp = "corp"; var setIdentifiers = []; var cardSet = {}; var coreSet = [];\n${content}\n; return Object.keys(cardSet).length > 0 ? cardSet : coreSet;`;
+                const executionContent = `var runner = "runner"; var corp = "corp"; var setIdentifiers = []; var cardSet = {}; var coreSet = [];\n${content}\n; return { cardSet: cardSet, coreSet: coreSet, setIdentifiers: setIdentifiers };`;
                 const func = new Function(executionContent);
-                const loadedData = func();
+                const result = func();
 
-                if (Array.isArray(loadedData)) {
-                    this.cardData = loadedData;
-                } else {
-                    // Convert object to sparse array
+                // Determine which data variable was used
+                if (Object.keys(result.cardSet).length > 0) {
+                    this.fileSettings.dataVariableName = 'cardSet';
                     this.cardData = [];
-                    for (const key in loadedData) {
-                        this.cardData[parseInt(key)] = loadedData[key];
+                     for (const key in result.cardSet) {
+                        this.cardData[parseInt(key)] = result.cardSet[key];
                     }
+                } else {
+                    this.fileSettings.dataVariableName = 'coreSet';
+                    this.cardData = result.coreSet;
                 }
+
+                // Check for setIdentifier
+                if (result.setIdentifiers.length > 0) {
+                    this.fileSettings.setIdentifier = result.setIdentifiers[0];
+                } else {
+                    this.fileSettings.setIdentifier = 'undefined';
+                }
+
                 this.renderCardList();
                 this.resetEditor();
                 this.dom.downloadBtn.disabled = false;
@@ -111,10 +131,17 @@ window.NetrunnerDB = {
             this.showMessage('No data to save.', 'error');
             return;
         }
-        let fileContent = "// CARD DEFINITIONS\nvar coreSet = [];\n\n";
+        let fileContent = "";
+        if (this.fileSettings.setIdentifier !== 'undefined') {
+            fileContent += `setIdentifiers.push('${this.fileSettings.setIdentifier}');\n\n`;
+        }
+
+        const varName = this.fileSettings.dataVariableName;
+        fileContent += `var ${varName} = ${varName === 'cardSet' ? '{}' : '[]'};\n\n`;
+
         this.cardData.forEach((card, index) => {
             if (card) {
-                fileContent += `coreSet[${index}] = ${this.objectToString(card)};\n\n`;
+                fileContent += `${varName}[${index}] = ${this.objectToString(card)};\n\n`;
             }
         });
         const blob = new Blob([fileContent], { type: 'application/javascript' });
@@ -392,6 +419,20 @@ window.NetrunnerDB = {
         this.renderEditor(this.currentCardIndex);
         this.showMessage('Card fields updated.', 'success');
     },
+    
+    // --- FILE SETTINGS MODAL ---
+    openFileSettingsModal: function() {
+        this.dom.dataVarNameInput.value = this.fileSettings.dataVariableName;
+        this.dom.setIdentifierInput.value = this.fileSettings.setIdentifier;
+        this.dom.fileSettingsModal.classList.remove('hidden');
+    },
+
+    saveFileSettings: function() {
+        this.fileSettings.dataVariableName = this.dom.dataVarNameInput.value.trim() || 'coreSet';
+        this.fileSettings.setIdentifier = this.dom.setIdentifierInput.value.trim() || 'undefined';
+        this.dom.fileSettingsModal.classList.add('hidden');
+        this.showMessage('File settings updated.', 'success');
+    },
 
     // --- UTILITY FUNCTIONS ---
     objectToString: function(obj, space = 2) {
@@ -426,7 +467,6 @@ window.NetrunnerDB = {
     },
 
     // --- GEMINI API FUNCTIONS ---
-    // (Kept in core lib as they are stable features)
     fetchWithRetry: async function(url, options, retries = 3, backoff = 1000) {
         for (let i = 0; i < retries; i++) {
             try {
