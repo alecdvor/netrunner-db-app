@@ -90,6 +90,7 @@ window.NetrunnerDB = {
         reader.onload = (e) => {
             try {
                 const content = e.target.result;
+                // Define all potential global variables the scripts might need.
                 const executionContent = `var runner = "runner"; var corp = "corp"; var setIdentifiers = []; var cardSet = {}; var coreSet = [];\n${content}\n; return { cardSet: cardSet, coreSet: coreSet, setIdentifiers: setIdentifiers };`;
                 const func = new Function(executionContent);
                 const result = func();
@@ -110,7 +111,7 @@ window.NetrunnerDB = {
                 if (result.setIdentifiers.length > 0) {
                     this.fileSettings.setIdentifier = result.setIdentifiers[0];
                 } else {
-                    this.fileSettings.setIdentifier = 'undefined';
+                    this.fileSettings.setIdentifier = this.fileSettings.dataVariableName;
                 }
 
                 this.renderCardList();
@@ -132,7 +133,7 @@ window.NetrunnerDB = {
             return;
         }
         let fileContent = "";
-        if (this.fileSettings.setIdentifier !== 'undefined') {
+        if (this.fileSettings.setIdentifier !== 'undefined' && this.fileSettings.dataVariableName === 'cardSet') {
             fileContent += `setIdentifiers.push('${this.fileSettings.setIdentifier}');\n\n`;
         }
 
