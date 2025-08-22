@@ -1,5 +1,5 @@
 /**
- * Netrunner DB Editor - Core Library v1.2
+ * Netrunner DB Editor - Core Library v1.2.1
  * Contains all stable application logic for the card editor.
  */
 
@@ -7,33 +7,40 @@
 const AI_FEATURES_ENABLED = true;
 
 // --- APPLICATION NAMESPACE ---
+// Encapsulates all app logic to avoid polluting the global scope.
 window.NetrunnerDB = {
     // --- STATE MANAGEMENT ---
-    cardData: [],
-    currentCardIndex: null,
-    fileName: 'edited_cards.js',
+    cardData: [], // Holds the array of card objects. Can be sparse.
+    currentCardIndex: null, // Index of the card currently being edited.
+    fileName: 'edited_cards.js', // Default filename for new/downloaded files.
+    // Holds metadata about the loaded file's structure.
     fileSettings: {
-        dataVariableName: 'coreSet',
-        setIdentifier: 'undefined',
+        dataVariableName: 'coreSet', // The name of the main array/object in the JS file ('coreSet' or 'cardSet').
+        setIdentifier: 'undefined', // The set identifier string, if present.
     },
-    currentlyBuildingField: null,
+    currentlyBuildingField: null, // Holds the key of the field being edited by the block builder.
 
     // --- CONSTANTS ---
+    // A master list of all possible properties a card can have, used for ordering fields consistently.
     ALL_POSSIBLE_FIELDS: [
         'title', 'imageFile', 'player', 'cardType', 'subTypes', 'faction', 'deckSize', 'influenceLimit', 'playCost', 'installCost', 'rezCost', 'memoryCost', 'advancementRequirement', 'strength', 'link', 'trashCost', 'agendaPoints', 'recurringCredits', 'memoryUnits', 'hostingMU', 'power', 'virus', 'agenda', 'unique', 'canBeAdvanced', 'Enumerate', 'Resolve', 'abilities', 'subroutines', 'text', 'canUseCredits', 'canHost', 'installOnlyOn', 'strengthBoost', 'strengthReduce', 'modifyStrength', 'modifyInstallCost', 'modifyAdvancementRequirement', 'accessAdditional', 'modifyBreachAccess', 'automaticOnInstall', 'automaticOnAccess', 'automaticOnEncounter', 'automaticOnAnyChange', 'responseOnRunSuccessful', 'responseOnRunEnds', 'responseOnEncounterEnds', 'responseOnRunnerTurnBegins', 'responseOnCorpTurnBegins', 'responseOnScored', 'responseOnStolen', 'responsePreventableAddTags', 'responsePreventableDamage', 'responsePreventableExpose', 'responsePreventableTrash'
     ],
+    // Default values for new fields added to a card.
     FIELD_DEFAULTS: {
         title: "New Card", imageFile: "", player: "runner", cardType: "event", subTypes: [], faction: "Neutral", deckSize: 45, influenceLimit: 15, playCost: 0, installCost: 0, rezCost: 0, memoryCost: 0, advancementRequirement: 0, strength: 0, link: 0, trashCost: 0, agendaPoints: 0, recurringCredits: 0, memoryUnits: 0, hostingMU: 0, power: 0, virus: 0, agenda: 0, unique: false, canBeAdvanced: false, Enumerate: function () { return [{}]; }, Resolve: function (params) {}, abilities: [], subroutines: [], text: "", canUseCredits: function (doing, card) { return false; }, canHost: function (card) { return false; }, installOnlyOn: function (card) { return true; }, strengthBoost: 0, strengthReduce: 0, modifyStrength: { Resolve: function (card) { return 0; } }, modifyInstallCost: { Resolve: function (card) { return 0; } }, modifyAdvancementRequirement: { Resolve: function (card) { return 0; } }, accessAdditional: 0, modifyBreachAccess: { Resolve: function () { return 0; } }, automaticOnInstall: { Resolve: function (card) {} }, automaticOnAccess: { Resolve: function (card) {} }, automaticOnEncounter: { Resolve: function (card) {} }, automaticOnAnyChange: { Resolve: function () {} }, responseOnRunSuccessful: { Resolve: function () {} }, responseOnRunEnds: { Resolve: function () {} }, responseOnEncounterEnds: { Resolve: function () {} }, responseOnRunnerTurnBegins: { Resolve: function () {} }, responseOnCorpTurnBegins: { Resolve: function () {} }, responseOnScored: { Resolve: function () {} }, responseOnStolen: { Resolve: function () {} }, responsePreventableAddTags: { Resolve: function () {} }, responsePreventableDamage: { Resolve: function () {} }, responsePreventableExpose: { Resolve: function () {} }, responsePreventableTrash: { Resolve: function () {} }
     },
+    // Predefined options for dropdown menus in the editor.
     PLAYER_OPTIONS: ["runner", "corp"],
     CARD_TYPE_OPTIONS: ["identity", "event", "hardware", "program", "resource", "asset", "agenda", "operation", "ice", "upgrade"],
     SUBTYPE_OPTIONS: [
         [], ["Virus"], ["Sentry", "Tracer", "Observer"], ["Chip"], ["Console"], ["Icebreaker", "Decoder"], ["Connection"], ["Ambush"], ["Megacorp"], ["Code Gate"], ["Run"], ["Icebreaker", "Fracter"], ["Icebreaker", "Killer"], ["Icebreaker", "AI"], ["Barrier"], ["Job"], ["Sabotage"], ["G-mod"], ["Run", "Sabotage"], ["Daemon"], ["Virtual"], ["Seedy"], ["Natural"], ["Location"], ["Mod"], ["Remote"], ["Link"], ["Barrier", "Bioroid", "AP"], ["Code Gate", "Bioroid", "AP"], ["Sentry", "Destroyer"], ["Initiative"], ["Ambush", "Research"], ["Sysop", "Unorthodox"], ["Region"], ["Expansion"], ["Security"], ["Advertisement"], ["Transaction"], ["Code Gate", "Deflector"], ["Trap", "AP"], ["Sentry", "AP"], ["Barrier", "AP"], ["Cyborg"], ["Cybernetic"], ["Console", "Cybernetic"], ["Gear"], ["Cast"], ["Hostile"], ["Public", "Initiative"], ["Division"], ["Black Ops"], ["Gray Ops"], ["Genetics"], ["Ritzy"]
     ],
+    // List of fields that can use the Block Programmer.
     BUILDER_FIELDS: ['Resolve', 'Enumerate', 'automaticOnInstall', 'automaticOnAccess', 'automaticOnEncounter', 'automaticOnAnyChange', 'responseOnRunSuccessful', 'responseOnRunEnds', 'responseOnEncounterEnds', 'responseOnRunnerTurnBegins', 'responseOnCorpTurnBegins', 'responseOnScored', 'responseOnStolen', 'responsePreventableAddTags', 'responsePreventableDamage', 'responsePreventableExpose', 'responsePreventableTrash'],
 
 
     // --- DOM CACHE ---
+    // Caches references to frequently used DOM elements for performance.
     dom: {},
     cacheDom: function() {
         this.dom.fileUpload = document.getElementById('file-upload');
@@ -70,6 +77,9 @@ window.NetrunnerDB = {
     },
 
     // --- FILE HANDLING ---
+    /**
+     * Resets the application state to start a new file from scratch.
+     */
     handleStartNewFile: function() {
         this.cardData = [];
         this.currentCardIndex = null;
@@ -82,6 +92,10 @@ window.NetrunnerDB = {
         this.showMessage('New file started. Add your first card!', 'success');
     },
 
+    /**
+     * Handles the file upload event, reads the file content, and parses the card data.
+     * @param {Event} event - The file input change event.
+     */
     handleFileUpload: function(event) {
         const file = event.target.files[0];
         if (!file) return;
@@ -90,12 +104,12 @@ window.NetrunnerDB = {
         reader.onload = (e) => {
             try {
                 const content = e.target.result;
-                // Define all potential global variables the scripts might need.
+                // Pre-define all potential global variables the scripts might need to avoid reference errors.
                 const executionContent = `var runner = "runner"; var corp = "corp"; var setIdentifiers = []; var cardSet = {}; var coreSet = [];\n${content}\n; return { cardSet: cardSet, coreSet: coreSet, setIdentifiers: setIdentifiers };`;
                 const func = new Function(executionContent);
                 const result = func();
 
-                // Determine which data variable was used
+                // Determine which data variable was used in the file ('cardSet' or 'coreSet').
                 if (Object.keys(result.cardSet).length > 0) {
                     this.fileSettings.dataVariableName = 'cardSet';
                     this.cardData = [];
@@ -107,10 +121,11 @@ window.NetrunnerDB = {
                     this.cardData = result.coreSet;
                 }
 
-                // Check for setIdentifier
+                // Check for a 'setIdentifiers' string and store it.
                 if (result.setIdentifiers.length > 0) {
                     this.fileSettings.setIdentifier = result.setIdentifiers[0];
                 } else {
+                    // If not present, default to the data variable name.
                     this.fileSettings.setIdentifier = this.fileSettings.dataVariableName;
                 }
 
@@ -127,12 +142,16 @@ window.NetrunnerDB = {
         reader.readAsText(file);
     },
 
+    /**
+     * Serializes the current card data back into a JS file format and triggers a download.
+     */
     handleFileDownload: function() {
         if (this.cardData.length === 0) {
             this.showMessage('No data to save.', 'error');
             return;
         }
         let fileContent = "";
+        // Add the setIdentifier push if the file format requires it.
         if (this.fileSettings.setIdentifier !== 'undefined' && this.fileSettings.dataVariableName === 'cardSet') {
             fileContent += `setIdentifiers.push('${this.fileSettings.setIdentifier}');\n\n`;
         }
@@ -158,6 +177,9 @@ window.NetrunnerDB = {
     },
 
     // --- UI RENDERING ---
+    /**
+     * Renders the list of cards in the left panel based on the current cardData state.
+     */
     renderCardList: function() {
         this.dom.cardList.innerHTML = '';
         if (this.cardData.filter(Boolean).length === 0) {
@@ -179,6 +201,10 @@ window.NetrunnerDB = {
         });
     },
     
+    /**
+     * Renders the editor form for a selected card.
+     * @param {number} index - The index of the card to edit.
+     */
     renderEditor: function(index) {
         this.currentCardIndex = index;
         const card = this.cardData[index];
@@ -282,6 +308,9 @@ window.NetrunnerDB = {
         this.dom.editorContent.appendChild(form);
     },
 
+    /**
+     * Resets the editor panel to its initial welcome message state.
+     */
     resetEditor: function() {
         this.currentCardIndex = null;
         this.dom.welcomeMessage.classList.remove('hidden');
@@ -291,12 +320,19 @@ window.NetrunnerDB = {
     },
 
     // --- CARD ACTIONS ---
+    /**
+     * Selects a card from the list and displays it in the editor.
+     * @param {number} index - The index of the card to select.
+     */
     selectCard: function(index) {
         this.currentCardIndex = index;
         this.renderCardList();
         this.renderEditor(index);
     },
 
+    /**
+     * Adds a new, empty card to the data set.
+     */
     handleAddCard: function() {
         const newCard = { title: "New Card", cardType: "event", player: "runner" };
         const newIndex = this.cardData.reduce((max, val, idx) => val ? Math.max(max, idx) : max, 0) + 1;
@@ -306,6 +342,9 @@ window.NetrunnerDB = {
         this.showMessage('New card added!', 'success');
     },
 
+    /**
+     * Saves the changes made in the editor form to the cardData state.
+     */
     handleSaveChanges: function() {
         if (this.currentCardIndex === null) return;
         const form = this.dom.editorContent.querySelector('form');
@@ -342,6 +381,9 @@ window.NetrunnerDB = {
         this.showMessage('Card saved successfully!', 'success');
     },
 
+    /**
+     * Deletes the currently selected card from the data set.
+     */
     handleDeleteCard: function() {
         if (this.currentCardIndex === null) return;
         if (confirm(`Are you sure you want to delete "${this.cardData[this.currentCardIndex].title}"?`)) {
@@ -353,6 +395,9 @@ window.NetrunnerDB = {
     },
     
     // --- FIELD MANAGEMENT MODAL ---
+    /**
+     * Opens the modal to add or remove fields from the current card.
+     */
     openManageFieldsModal: function() {
         if (this.currentCardIndex === null) return;
         const card = this.cardData[this.currentCardIndex];
@@ -363,6 +408,10 @@ window.NetrunnerDB = {
         this.dom.fieldsModal.classList.remove('hidden');
     },
     
+    /**
+     * Creates a list item for a field in the 'Manage Fields' modal.
+     * @param {string} key - The name of the field.
+     */
     createFieldListItem: function(key) {
          const fieldItem = document.createElement('div');
          fieldItem.className = 'flex justify-between items-center bg-gray-700 p-2 rounded';
@@ -381,6 +430,9 @@ window.NetrunnerDB = {
          this.dom.modalFieldsList.appendChild(fieldItem);
     },
 
+    /**
+     * Populates the dropdown in the 'Manage Fields' modal with available fields.
+     */
     populateFieldDropdown: function() {
         this.dom.newFieldSelect.innerHTML = '';
         const modalKeys = Array.from(this.dom.modalFieldsList.querySelectorAll('div')).map(div => div.dataset.key);
@@ -393,6 +445,9 @@ window.NetrunnerDB = {
         });
     },
 
+    /**
+     * Adds a new field to the list in the 'Manage Fields' modal.
+     */
     handleAddFieldToModal: function() {
         const newKey = this.dom.newFieldSelect.value;
         if (!newKey) {
@@ -403,6 +458,9 @@ window.NetrunnerDB = {
         this.populateFieldDropdown();
     },
 
+    /**
+     * Applies the field changes from the modal to the current card object.
+     */
     handleApplyFieldChanges: function() {
         if (this.currentCardIndex === null) return;
         const oldCard = this.cardData[this.currentCardIndex];
@@ -422,12 +480,18 @@ window.NetrunnerDB = {
     },
     
     // --- FILE SETTINGS MODAL ---
+    /**
+     * Opens the modal to view and edit file-specific settings.
+     */
     openFileSettingsModal: function() {
         this.dom.dataVarNameInput.value = this.fileSettings.dataVariableName;
         this.dom.setIdentifierInput.value = this.fileSettings.setIdentifier;
         this.dom.fileSettingsModal.classList.remove('hidden');
     },
 
+    /**
+     * Saves the settings from the File Settings modal to the application state.
+     */
     saveFileSettings: function() {
         this.fileSettings.dataVariableName = this.dom.dataVarNameInput.value.trim() || 'coreSet';
         this.fileSettings.setIdentifier = this.dom.setIdentifierInput.value.trim() || 'undefined';
@@ -436,6 +500,12 @@ window.NetrunnerDB = {
     },
 
     // --- UTILITY FUNCTIONS ---
+    /**
+     * Converts a JavaScript object (including functions) into a string representation.
+     * @param {object} obj - The object to convert.
+     * @param {number} space - The number of spaces for indentation.
+     * @returns {string} The string representation of the object.
+     */
     objectToString: function(obj, space = 2) {
         const cache = new Set();
         return JSON.stringify(obj, (key, value) => {
@@ -454,6 +524,11 @@ window.NetrunnerDB = {
         .replace(/\\"/g, '"');
     },
 
+    /**
+     * Displays a temporary message to the user.
+     * @param {string} message - The message to display.
+     * @param {'success'|'error'} type - The type of message.
+     */
     showMessage: function(message, type = 'success') {
         this.dom.messageText.textContent = message;
         this.dom.messageBox.classList.remove('bg-green-600', 'bg-red-600', 'bg-gray-700');
@@ -468,6 +543,14 @@ window.NetrunnerDB = {
     },
 
     // --- GEMINI API FUNCTIONS ---
+    /**
+     * A wrapper for fetch that includes exponential backoff for retries.
+     * @param {string} url - The API endpoint URL.
+     * @param {object} options - The options for the fetch request.
+     * @param {number} retries - The number of retries.
+     * @param {number} backoff - The initial backoff delay in ms.
+     * @returns {Promise<Response>}
+     */
     fetchWithRetry: async function(url, options, retries = 3, backoff = 1000) {
         for (let i = 0; i < retries; i++) {
             try {
@@ -481,6 +564,9 @@ window.NetrunnerDB = {
         }
     },
 
+    /**
+     * Handles the ✨ Generate Card from Idea feature.
+     */
     handleGenerateCard: async function() {
         const userPrompt = this.dom.aiPromptInput.value.trim();
         if (!userPrompt) {
@@ -538,6 +624,10 @@ window.NetrunnerDB = {
         }
     },
 
+    /**
+     * Handles the ✨ Suggest Flavor Text feature.
+     * @param {HTMLElement} button - The button that was clicked.
+     */
     handleGenerateFlavorText: async function(button) {
         if (this.currentCardIndex === null) return;
         const card = this.cardData[this.currentCardIndex];
