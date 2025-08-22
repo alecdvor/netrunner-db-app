@@ -80,12 +80,14 @@ window.NetrunnerDB = {
             try {
                 const content = e.target.result;
                 // Define all potential global variables the scripts might need.
-                const executionContent = `var runner = "runner"; var corp = "corp"; var setIdentifiers = [];\n${content}\n; return cardSet || coreSet;`;
+                const executionContent = `var runner = "runner"; var corp = "corp"; var setIdentifiers = []; var cardSet = {}; var coreSet = [];\n${content}\n; return Object.keys(cardSet).length > 0 ? cardSet : coreSet;`;
                 const func = new Function(executionContent);
                 const loadedData = func();
+
                 if (Array.isArray(loadedData)) {
                     this.cardData = loadedData;
                 } else {
+                    // Convert object to sparse array
                     this.cardData = [];
                     for (const key in loadedData) {
                         this.cardData[parseInt(key)] = loadedData[key];
