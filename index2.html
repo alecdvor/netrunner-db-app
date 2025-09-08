@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Netrunner Card Database Editor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/blockly/blockly_compressed.js"></script>
+    <script src="https://unpkg.com/blockly/blocks_compressed.js"></script>
+    <script src="https://unpkg.com/blockly/javascript_compressed.js"></script>
+    <script src="https://unpkg.com/blockly/msg/en.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Custom scrollbar for a better look */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #1a202c; }
+        ::-webkit-scrollbar-thumb { background: #4a5568; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #718096; }
+        .property-key { font-weight: 600; color: #a0aec0; }
+        .loader {
+            border: 2px solid #f3f3f3; border-top: 2px solid #3498db;
+            border-radius: 50%; width: 16px; height: 16px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-200 flex flex-col h-screen">
+
+    <header class="bg-gray-800 shadow-md p-4 flex flex-col sm:flex-row justify-between items-center z-10 gap-4">
+        <h1 class="text-2xl font-bold text-cyan-400">Netrunner DB Editor <span class="text-xs text-gray-400">v1.2</span></h1>
+        <div class="flex items-center space-x-4">
+            <button id="start-new-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg">Start New</button>
+            <label for="file-upload" class="cursor-pointer bg-cyan-600 hover:bg-cyan-700 text-white font-semibold py-2 px-4 rounded-lg">Load .js File</label>
+            <input id="file-upload" type="file" class="hidden" accept=".js">
+            <button id="file-settings-btn" class="bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2 px-4 rounded-lg">File Settings</button>
+            <button id="download-btn" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg disabled:bg-gray-600 disabled:cursor-not-allowed" disabled>Save & Download</button>
+        </div>
+    </header>
+
+    <div id="ai-tools-bar" class="bg-gray-800/50 p-3 flex flex-col sm:flex-row items-center justify-center gap-3 border-t border-b border-gray-700">
+        <label for="ai-prompt" class="font-semibold text-cyan-400">✨ AI Card Generation:</label>
+        <input type="text" id="ai-prompt" placeholder="e.g., a sneaky runner event that messes with corp credits" class="flex-grow bg-gray-700 border border-gray-600 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-gray-200 w-full sm:w-auto">
+        <button id="generate-card-btn" class="bg-cyan-600 hover:bg-cyan-700 text-white font-semibold py-2 px-4 rounded-lg w-full sm:w-auto">Generate Card</button>
+    </div>
+
+    <main class="flex flex-1 overflow-hidden">
+        <div id="card-list-container" class="w-1/3 bg-gray-800 border-r border-gray-700 flex flex-col">
+            <div class="p-4 border-b border-gray-700 flex justify-between items-center">
+                <h2 class="text-xl font-semibold">Cards</h2>
+                <button id="add-card-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-lg text-sm disabled:bg-gray-600 disabled:cursor-not-allowed" disabled>+</button>
+            </div>
+            <div id="card-list" class="overflow-y-auto flex-1 p-2">
+                <p class="text-gray-500 text-center p-4">Load a file or start new to see cards.</p>
+            </div>
+        </div>
+
+        <div id="editor-container" class="w-2/3 bg-gray-900 flex flex-col overflow-hidden">
+            <div id="editor-header" class="p-4 border-b border-gray-700 flex justify-between items-center hidden">
+                <h2 id="editor-title" class="text-xl font-semibold">Card Details</h2>
+                <div>
+                    <button id="save-card-btn" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg">Save Changes</button>
+                    <button id="manage-fields-btn" class="bg-yellow-600 hover:bg-yellow-700 text-white font-semibold py-2 px-4 rounded-lg ml-2">Manage Fields</button>
+                    <button id="delete-card-btn" class="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg ml-2">Delete Card</button>
+                </div>
+            </div>
+            <div id="editor-content" class="overflow-y-auto flex-1 p-6">
+                <div id="welcome-message" class="text-center text-gray-500">
+                    <p class="text-lg">Welcome!</p>
+                    <p>Load a card file or start a new one to begin editing.</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div id="message-box" class="fixed bottom-5 right-5 bg-gray-700 text-white py-3 px-5 rounded-lg shadow-lg transition-opacity duration-300 opacity-0">
+        <p id="message-text"></p>
+    </div>
+
+    <div id="fields-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center hidden z-50">
+        <div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4">
+            <div class="p-4 border-b border-gray-700 flex justify-between items-center"><h3 class="text-lg font-semibold">Manage Card Fields</h3><button id="close-modal-btn" class="text-gray-400 hover:text-white">&times;</button></div>
+            <div class="p-6 max-h-96 overflow-y-auto"><div id="modal-fields-list" class="space-y-2 mb-4"></div><div class="flex space-x-2"><select id="new-field-select" class="flex-grow bg-gray-700 border border-gray-600 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-gray-200"></select><button id="add-field-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg">Add</button></div></div>
+            <div class="p-4 bg-gray-800 border-t border-gray-700 flex justify-end"><button id="apply-fields-btn" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg">Apply Changes</button></div>
+        </div>
+    </div>
+
+    <div id="file-settings-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center hidden z-50">
+        <div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-md mx-4">
+            <div class="p-4 border-b border-gray-700 flex justify-between items-center">
+                <h3 class="text-lg font-semibold">File Settings</h3>
+                <button id="close-file-settings-btn" class="text-gray-400 hover:text-white">&times;</button>
+            </div>
+            <div class="p-6 space-y-4">
+                <div>
+                    <label for="data-var-name" class="block mb-1 font-semibold text-gray-300">Data Variable Name</label>
+                    <input type="text" id="data-var-name" class="w-full bg-gray-700 border border-gray-600 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-gray-200">
+                </div>
+                <div>
+                    <label for="set-identifier-string" class="block mb-1 font-semibold text-gray-300">Set Identifier String</label>
+                    <input type="text" id="set-identifier-string" class="w-full bg-gray-700 border border-gray-600 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-gray-200">
+                </div>
+            </div>
+            <div class="p-4 bg-gray-800 border-t border-gray-700 flex justify-end">
+                <button id="save-file-settings-btn" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg">Save Settings</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="block-builder-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center hidden z-50">
+        <div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-6xl mx-4 flex flex-col" style="height: 85vh;">
+            <div class="p-4 border-b border-gray-700 flex justify-between items-center">
+                <h3 id="block-builder-title" class="text-lg font-semibold">Logic Builder</h3>
+                <div>
+                    <button id="apply-code-btn" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg">Apply Code</button>
+                    <button id="close-block-builder-btn" class="text-gray-400 hover:text-white ml-2">&times;</button>
+                </div>
+            </div>
+            <div id="blockly-container" class="flex-1 relative">
+                <div id="blockly-div" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0;"></div>
+            </div>
+        </div>
+    </div>
+
+    <xml xmlns="https://developers.google.com/blockly/xml" id="toolbox" style="display: none">
+        <category name="Control" colour="%{BKY_LOGIC_HUE}">
+            <block type="controls_if"></block>
+            <block type="controls_if">
+                <mutation else="1"></mutation>
+            </block>
+            <block type="controls_if">
+                <mutation elseif="1" else="1"></mutation>
+            </block>
+        </category>
+        <category name="Checks" colour="210">
+            <block type="check_card_type"></block>
+            <block type="check_sub_type"></block>
+            <block type="check_credits"></block>
+            <block type="check_tags"></block>
+            <block type="check_encounter"></block>
+        </category>
+        <category name="Actions" colour="290">
+            <block type="trash_card"></block>
+            <block type="gain_credits"></block>
+            <block type="lose_credits"></block>
+            <block type="draw_cards"></block>
+            <block type="add_tags"></block>
+            <block type="end_run"></block>
+        </category>
+        <category name="Values" colour="%{BKY_MATH_HUE}">
+            <block type="math_number">
+                <field name="NUM">1</field>
+            </block>
+            <block type="text"></block>
+            <block type="logic_boolean"></block>
+        </category>
+        <category name="Variables" colour="%{BKY_VARIABLES_HUE}" custom="VARIABLE"></category>
+    </xml>
+
+
+    <script src="https://cdn.jsdelivr.net/gh/alecdvor/netrunner-db-app@main/netrunner-db-lib.js"></script>
+    <script>
+        /**
+         * Netrunner DB Editor - Main Application File v1.2
+         * Handles event listeners and new feature development.
+         */
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            NetrunnerDB.cacheDom();
+            const dom = NetrunnerDB.dom;
+
+            // --- Attach Event Listeners to Core Functions ---
+            dom.fileUpload.addEventListener('change', (e) => NetrunnerDB.handleFileUpload(e));
+            dom.startNewBtn.addEventListener('click', () => NetrunnerDB.handleStartNewFile());
+            dom.downloadBtn.addEventListener('click', () => NetrunnerDB.handleFileDownload());
+            dom.addCardBtn.addEventListener('click', () => NetrunnerDB.handleAddCard());
+            dom.saveCardBtn.addEventListener('click', () => NetrunnerDB.handleSaveChanges());
+            dom.deleteCardBtn.addEventListener('click', () => NetrunnerDB.handleDeleteCard());
+
+            // --- Field Management Modal Listeners ---
+            dom.manageFieldsBtn.addEventListener('click', () => NetrunnerDB.openManageFieldsModal());
+            dom.closeModalBtn.addEventListener('click', () => dom.fieldsModal.classList.add('hidden'));
+            dom.fieldsModal.addEventListener('click', (e) => { if (e.target === dom.fieldsModal) dom.fieldsModal.classList.add('hidden'); });
+            dom.addFieldBtn.addEventListener('click', () => NetrunnerDB.handleAddFieldToModal());
+            dom.applyFieldsBtn.addEventListener('click', () => NetrunnerDB.handleApplyFieldChanges());
+
+            // --- File Settings Modal Listeners ---
+            dom.fileSettingsBtn.addEventListener('click', () => NetrunnerDB.openFileSettingsModal());
+            dom.closeFileSettingsBtn.addEventListener('click', () => dom.fileSettingsModal.classList.add('hidden'));
+            dom.fileSettingsModal.addEventListener('click', (e) => { if (e.target === dom.fileSettingsModal) dom.fileSettingsModal.classList.add('hidden'); });
+            dom.saveFileSettingsBtn.addEventListener('click', () => NetrunnerDB.saveFileSettings());
+
+            // --- NEW: Blockly Programmer ---
+            const blockBuilderModal = document.getElementById('block-builder-modal');
+            const closeBlockBuilderBtn = document.getElementById('close-block-builder-btn');
+            const applyCodeBtn = document.getElementById('apply-code-btn');
+            const blocklyDiv = document.getElementById('blockly-div');
+            const toolbox = document.getElementById('toolbox');
+            let blocklyWorkspace;
+
+            // --- Blockly Custom Block Definitions ---
+            Blockly.defineBlocksWithJsonArray([
+                // Checks
+                {
+                    "type": "check_card_type",
+                    "message0": "Card type is %1",
+                    "args0": [{"type": "field_input", "name": "TYPE", "text": "program"}],
+                    "output": "Boolean", "colour": 210, "tooltip": "Checks if the card's type matches."
+                },
+                {
+                    "type": "check_sub_type",
+                    "message0": "Card subtype is %1",
+                    "args0": [{"type": "field_input", "name": "SUBTYPE", "text": "icebreaker"}],
+                    "output": "Boolean", "colour": 210, "tooltip": "Checks if the card's subtype matches."
+                },
+                {
+                    "type": "check_credits",
+                    "message0": "%1 has at least %2 credits",
+                    "args0": [
+                        {"type": "field_dropdown", "name": "PLAYER", "options": [["runner", "runner"], ["corp", "corp"]]},
+                        {"type": "input_value", "name": "AMOUNT", "check": "Number"}
+                    ],
+                    "output": "Boolean", "colour": 210, "tooltip": "Checks if a player has a certain amount of credits."
+                },
+                {
+                    "type": "check_tags",
+                    "message0": "Runner has at least %1 tags",
+                    "args0": [{"type": "input_value", "name": "AMOUNT", "check": "Number"}],
+                    "output": "Boolean", "colour": 210, "tooltip": "Checks if the runner has a certain number of tags."
+                },
+                {
+                    "type": "check_encounter",
+                    "message0": "Runner is encountering this ice",
+                    "output": "Boolean", "colour": 210, "tooltip": "Checks if the current event is an encounter."
+                },
+                // Actions
+                {
+                    "type": "trash_card",
+                    "message0": "Trash %1",
+                    "args0": [{"type": "input_value", "name": "CARD"}],
+                    "previousStatement": null, "nextStatement": null, "colour": 290, "tooltip": "Trashes a card."
+                },
+                {
+                    "type": "gain_credits",
+                    "message0": "%1 gains %2 credits",
+                    "args0": [
+                        {"type": "field_dropdown", "name": "PLAYER", "options": [["runner", "runner"], ["corp", "corp"]]},
+                        {"type": "input_value", "name": "AMOUNT", "check": "Number"}
+                    ],
+                    "previousStatement": null, "nextStatement": null, "colour": 290, "tooltip": "Player gains credits."
+                },
+                 {
+                    "type": "lose_credits",
+                    "message0": "%1 loses %2 credits",
+                    "args0": [
+                        {"type": "field_dropdown", "name": "PLAYER", "options": [["runner", "runner"], ["corp", "corp"]]},
+                        {"type": "input_value", "name": "AMOUNT", "check": "Number"}
+                    ],
+                    "previousStatement": null, "nextStatement": null, "colour": 290, "tooltip": "Player loses credits."
+                },
+                {
+                    "type": "draw_cards",
+                    "message0": "%1 draws %2 cards",
+                     "args0": [
+                        {"type": "field_dropdown", "name": "PLAYER", "options": [["runner", "runner"], ["corp", "corp"]]},
+                        {"type": "input_value", "name": "AMOUNT", "check": "Number"}
+                    ],
+                    "previousStatement": null, "nextStatement": null, "colour": 290, "tooltip": "Player draws cards."
+                },
+                {
+                    "type": "add_tags",
+                    "message0": "Runner gains %1 tags",
+                    "args0": [{"type": "input_value", "name": "AMOUNT", "check": "Number"}],
+                    "previousStatement": null, "nextStatement": null, "colour": 290, "tooltip": "Give the runner tags."
+                },
+                {
+                    "type": "end_run",
+                    "message0": "End the run",
+                    "previousStatement": null, "nextStatement": null, "colour": 290, "tooltip": "Ends the current run."
+                }
+            ]);
+
+            // --- Blockly Custom Code Generators ---
+            const js = Blockly.JavaScript;
+            js.forBlock['check_card_type'] = block => [`CheckCardType(card, ["${block.getFieldValue('TYPE')}"])`, js.ORDER_FUNCTION_CALL];
+            js.forBlock['check_sub_type'] = block => [`CheckSubType(card, "${block.getFieldValue('SUBTYPE')}")`, js.ORDER_FUNCTION_CALL];
+            js.forBlock['check_credits'] = block => {
+                const player = block.getFieldValue('PLAYER');
+                const amount = js.valueToCode(block, 'AMOUNT', js.ORDER_ATOMIC) || '0';
+                return [`CheckCredits(${player}, ${amount})`, js.ORDER_FUNCTION_CALL];
+            };
+            js.forBlock['check_tags'] = block => {
+                const amount = js.valueToCode(block, 'AMOUNT', js.ORDER_ATOMIC) || '0';
+                return [`CheckTags(${amount})`, js.ORDER_FUNCTION_CALL];
+            };
+            js.forBlock['check_encounter'] = block => ['CheckEncounter()', js.ORDER_FUNCTION_CALL];
+            js.forBlock['trash_card'] = block => {
+                const card = js.valueToCode(block, 'CARD', js.ORDER_ATOMIC) || 'null';
+                return `Trash(${card}, true);\n`;
+            };
+            js.forBlock['gain_credits'] = block => {
+                const player = block.getFieldValue('PLAYER');
+                const amount = js.valueToCode(block, 'AMOUNT', js.ORDER_ATOMIC) || '0';
+                return `GainCredits(${player}, ${amount});\n`;
+            };
+            js.forBlock['lose_credits'] = block => {
+                const player = block.getFieldValue('PLAYER');
+                const amount = js.valueToCode(block, 'AMOUNT', js.ORDER_ATOMIC) || '0';
+                return `LoseCredits(${player}, ${amount});\n`;
+            };
+             js.forBlock['draw_cards'] = block => {
+                const player = block.getFieldValue('PLAYER');
+                const amount = js.valueToCode(block, 'AMOUNT', js.ORDER_ATOMIC) || '0';
+                return `Draw(${player}, ${amount});\n`;
+            };
+            js.forBlock['add_tags'] = block => {
+                const amount = js.valueToCode(block, 'AMOUNT', js.ORDER_ATOMIC) || '0';
+                return `AddTags(${amount});\n`;
+            };
+            js.forBlock['end_run'] = block => 'EndTheRun();\n';
+
+
+            function initializeBlockly() {
+                if (blocklyWorkspace) {
+                    blocklyWorkspace.dispose();
+                }
+                blocklyWorkspace = Blockly.inject(blocklyDiv, {
+                    toolbox: toolbox,
+                    renderer: 'zelos',
+                    theme: Blockly.Themes.Dark,
+                    grid: { spacing: 20, length: 3, colour: '#4a5568', snap: true },
+                    zoom: { controls: true, wheel: true, startScale: 1.0, maxScale: 3, minScale: 0.3, scaleSpeed: 1.2 }
+                });
+                 // Handle workspace resizing
+                const onresize = function(e) {
+                    Blockly.svgResize(blocklyWorkspace);
+                };
+                window.addEventListener('resize', onresize, false);
+                Blockly.svgResize(blocklyWorkspace);
+            }
+
+            // --- Connect Blockly to UI ---
+            closeBlockBuilderBtn.addEventListener('click', () => blockBuilderModal.classList.add('hidden'));
+            applyCodeBtn.addEventListener('click', applyGeneratedCode);
+            
+            // Override the default button click in the library
+            NetrunnerDB.openBlockBuilder = function() {
+                blockBuilderModal.classList.remove('hidden');
+                setTimeout(initializeBlockly, 0); // Initialize after modal is visible
+            }
+            
+            function applyGeneratedCode() {
+                const code = Blockly.JavaScript.workspaceToCode(blocklyWorkspace);
+                const fieldKey = NetrunnerDB.currentlyBuildingField;
+                const targetInput = NetrunnerDB.dom.editorContent.querySelector(`[name="${fieldKey}"]`);
+
+                if (targetInput) {
+                    // Recreate the object structure with the generated code
+                    const functionWrapper = `{ Resolve: function(card) {\n${code}\n} }`;
+                    try {
+                        const codeObject = new Function(`return ${functionWrapper}`)();
+                        targetInput.value = NetrunnerDB.objectToString(codeObject, 2);
+                        NetrunnerDB.showMessage('Code applied from builder!', 'success');
+                    } catch (e) {
+                         console.error("Error creating function from Blockly code:", e);
+                         NetrunnerDB.showMessage('Could not apply code. Invalid logic.', 'error');
+                    }
+                }
+                blockBuilderModal.classList.add('hidden');
+            }
+        });
+    </script>
+</body>
+</html>
