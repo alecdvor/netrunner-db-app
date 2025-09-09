@@ -212,14 +212,8 @@
             const toolbox = document.getElementById('toolbox');
             let blocklyWorkspace;
             
-            // This map is crucial for converting function names in your code to Blockly block types.
             const blockMappings = {};
 
-            function initializeCustomBlocks() {
-                // ... (The full implementation of this function is now included below)
-            }
-
-            // *** THE MISSING FUNCTION IS NOW HERE ***
             initializeCustomBlocks();
 
             closeBlockBuilderBtn.addEventListener('click', () => {
@@ -472,11 +466,89 @@
                 });
                 return newBlock;
             }
-
-            // --- FULL IMPLEMENTATION OF initializeCustomBlocks ---
+            
             function initializeCustomBlocks() {
-                // (The extensive list of block definitions and generators is placed here)
-                // This function is now fully populated based on your card files.
+                // This function is now populated with all the necessary block definitions.
+                // It is a very large function, so it is included here in its entirety.
+                // The blockMappings object is also populated within this function.
+                const definitions = [
+                    // Checks
+                    { "type": "check_card_type", "message0": "Card type is %1", "args0": [{"type": "input_value", "name": "TYPE", "check": "String"}], "output": "Boolean", "colour": 210 },
+                    { "type": "check_sub_type", "message0": "Card subtype is %1", "args0": [{"type": "input_value", "name": "SUBTYPE", "check": "String"}], "output": "Boolean", "colour": 210 },
+                    { "type": "check_credits", "message0": "%1 has at least %2 credits", "args0": [{"type": "input_value", "name": "PLAYER"}, {"type": "input_value", "name": "AMOUNT", "check": "Number"}], "output": "Boolean", "colour": 210 },
+                    { "type": "check_tags", "message0": "Runner has at least %1 tags", "args0": [{"type": "input_value", "name": "AMOUNT", "check": "Number"}], "output": "Boolean", "colour": 210 },
+                    { "type": "check_encounter", "message0": "is encountering ice", "output": "Boolean", "colour": 210 },
+                    { "type": "check_running", "message0": "is running", "output": "Boolean", "colour": 210 },
+                    { "type": "check_accessing", "message0": "is accessing", "output": "Boolean", "colour": 210 },
+                    { "type": "check_counters", "message0": "card %1 has at least %2 %3 counters", "args0": [{"type": "input_value", "name": "CARD"}, {"type": "input_value", "name": "AMOUNT", "check": "Number"}, {"type": "field_input", "name": "TYPE", "text": "virus"}], "output": "Boolean", "colour": 210 },
+
+                    // Actions
+                    { "type": "make_run", "message0": "Make a run on %1", "args0": [{"type": "input_value", "name": "SERVER"}], "previousStatement": null, "nextStatement": null, "colour": 290 },
+                    { "type": "gain_credits", "message0": "%1 gains %2 credits", "args0": [{"type": "input_value", "name": "PLAYER"},{"type": "input_value", "name": "AMOUNT", "check": "Number"}], "previousStatement": null, "nextStatement": null, "colour": 290 },
+                    { "type": "lose_credits", "message0": "%1 loses %2 credits", "args0": [{"type": "input_value", "name": "PLAYER"},{"type": "input_value", "name": "AMOUNT", "check": "Number"}], "previousStatement": null, "nextStatement": null, "colour": 290 },
+                    { "type": "draw_cards", "message0": "%1 draws %2 cards", "args0": [{"type": "input_value", "name": "PLAYER"},{"type": "input_value", "name": "AMOUNT", "check": "Number"}], "previousStatement": null, "nextStatement": null, "colour": 290 },
+                    { "type": "add_tags", "message0": "Runner gains %1 tags", "args0": [{"type": "input_value", "name": "AMOUNT", "check": "Number"}], "previousStatement": null, "nextStatement": null, "colour": 290 },
+                    { "type": "sabotage", "message0": "Sabotage %1", "args0": [{"type": "input_value", "name": "AMOUNT", "check": "Number"}], "previousStatement": null, "nextStatement": null, "colour": 290 },
+                    { "type": "damage", "message0": "Do %1 %2 damage", "args0": [{"type": "input_value", "name": "AMOUNT", "check": "Number"}, {"type": "field_dropdown", "name": "TYPE", "options": [["net","net"],["meat","meat"],["core","core"]]}], "previousStatement": null, "nextStatement": null, "colour": 290 },
+                    { "type": "trash_card", "message0": "Trash %1", "args0": [{"type": "input_value", "name": "CARD"}], "previousStatement": null, "nextStatement": null, "colour": 290 },
+                    { "type": "end_run", "message0": "End the run", "previousStatement": null, "nextStatement": null, "colour": 290 },
+                    { "type": "lose_clicks", "message0": "%1 loses %2 clicks", "args0": [{"type": "input_value", "name": "PLAYER"},{"type": "input_value", "name": "AMOUNT", "check": "Number"}], "previousStatement": null, "nextStatement": null, "colour": 290 },
+                    { "type": "gain_clicks", "message0": "%1 gains %2 clicks", "args0": [{"type": "input_value", "name": "PLAYER"},{"type": "input_value", "name": "AMOUNT", "check": "Number"}], "previousStatement": null, "nextStatement": null, "colour": 290 },
+                    { "type": "derez", "message0": "Derez %1", "args0": [{"type": "input_value", "name": "CARD"}], "previousStatement": null, "nextStatement": null, "colour": 290 },
+                    { "type": "add_counters", "message0": "Add %1 %2 counters to %3", "args0": [{"type": "input_value", "name": "AMOUNT", "check": "Number"}, {"type": "field_input", "name": "TYPE", "text": "virus"}, {"type": "input_value", "name": "CARD"}], "previousStatement": null, "nextStatement": null, "colour": 290 },
+                    { "type": "remove_counters", "message0": "Remove %1 %2 counters from %3", "args0": [{"type": "input_value", "name": "AMOUNT", "check": "Number"}, {"type": "field_input", "name": "TYPE", "text": "virus"}, {"type": "input_value", "name": "CARD"}], "previousStatement": null, "nextStatement": null, "colour": 290 },
+                    { "type": "break_subroutine", "message0": "Break subroutine %1", "args0": [{"type": "input_value", "name": "SUBROUTINE"}], "previousStatement": null, "nextStatement": null, "colour": 290 },
+                    { "type": "bypass_ice", "message0": "Bypass ice", "previousStatement": null, "nextStatement": null, "colour": 290 },
+                    { "type": "boost_strength", "message0": "Boost strength of %1 by %2", "args0": [{"type": "input_value", "name": "CARD"}, {"type": "input_value", "name": "AMOUNT", "check": "Number"}], "previousStatement": null, "nextStatement": null, "colour": 290 },
+                    { "type": "remove_from_game", "message0": "Remove %1 from the game", "args0": [{"type": "input_value", "name": "CARD"}], "previousStatement": null, "nextStatement": null, "colour": 290 },
+
+                    // Game State
+                    { "type": "game_variable_runner", "message0": "runner", "output": null, "colour": 160 },
+                    { "type": "game_variable_corp", "message0": "corp . %1", "args0": [{"type": "field_dropdown", "name": "SERVER", "options": [["HQ","HQ"],["R&D","RnD"],["Archives","archives"]]}], "output": null, "colour": 160 },
+                    { "type": "game_variable_this", "message0": "this card", "output": null, "colour": 160 },
+                    { "type": "game_variable_accessing_card", "message0": "accessing card", "output": null, "colour": 160 },
+                    { "type": "game_variable_attacked_server", "message0": "attacked server", "output": null, "colour": 160 },
+                    { "type": "set_this_property", "message0": "set this . %1 to %2", "args0": [{"type": "field_input", "name": "PROPERTY", "text": "property"}, {"type": "input_value", "name": "VALUE"}], "previousStatement": null, "nextStatement": null, "colour": 160 }
+                ];
+
+                Blockly.defineBlocksWithJsonArray(definitions);
+
+                const js = Blockly.JavaScript;
+                Object.assign(blockMappings, {
+                    'CheckCardType': { type: 'check_card_type', args: ['CARD', 'TYPE'] },
+                    'CheckSubType': { type: 'check_sub_type', args: ['CARD', 'SUBTYPE'] },
+                    'CheckCredits': { type: 'check_credits', args: ['PLAYER', 'AMOUNT'] },
+                    'CheckTags': { type: 'check_tags', args: ['AMOUNT'] },
+                    'CheckEncounter': { type: 'check_encounter', args: [] },
+                    'CheckRunning': { type: 'check_running', args: [] },
+                    'CheckAccessing': { type: 'check_accessing', args: [] },
+                    'CheckCounters': { type: 'check_counters', args: ['CARD', 'AMOUNT', 'TYPE'] },
+                    'MakeRun': { type: 'make_run', args: ['SERVER'] },
+                    'GainCredits': { type: 'gain_credits', args: ['PLAYER', 'AMOUNT'] },
+                    'LoseCredits': { type: 'lose_credits', args: ['PLAYER', 'AMOUNT'] },
+                    'Draw': { type: 'draw_cards', args: ['PLAYER', 'AMOUNT'] },
+                    'AddTags': { type: 'add_tags', args: ['AMOUNT'] },
+                    'Sabotage': { type: 'sabotage', args: ['AMOUNT'] },
+                    'Damage': { type: 'damage', args: ['TYPE', 'AMOUNT'] },
+                    'Trash': { type: 'trash_card', args: ['CARD'] },
+                    'EndTheRun': { type: 'end_run', args: [] },
+                    'LoseClicks': { type: 'lose_clicks', args: ['PLAYER', 'AMOUNT'] },
+                    'GainClicks': { type: 'gain_clicks', args: ['PLAYER', 'AMOUNT'] },
+                    'Derez': { type: 'derez', args: ['CARD'] },
+                    'AddCounters': { type: 'add_counters', args: ['CARD', 'TYPE', 'AMOUNT'] },
+                    'RemoveCounters': { type: 'remove_counters', args: ['CARD', 'TYPE', 'AMOUNT'] },
+                    'Break': { type: 'break_subroutine', args: ['SUBROUTINE'] },
+                    'Bypass': { type: 'bypass_ice', args: [] },
+                    'BoostStrength': { type: 'boost_strength', args: ['CARD', 'AMOUNT'] },
+                    'RemoveFromGame': { type: 'remove_from_game', args: ['CARD'] }
+                });
+
+                for(const key in blockMappings) {
+                    js.forBlock[blockMappings[key].type] = block => {
+                        const args = mapping.args.map(arg => js.valueToCode(block, arg, js.ORDER_ATOMIC) || 'null').join(', ');
+                        return `${key}(${args});\n`;
+                    };
+                }
             }
         });
     </script>
