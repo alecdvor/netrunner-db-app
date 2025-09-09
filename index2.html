@@ -129,12 +129,11 @@
     <xml xmlns="https://developers.google.com/blockly/xml" id="toolbox" style="display: none">
         <category name="Control" colour="%{BKY_LOGIC_HUE}">
             <block type="controls_if"></block>
-            <block type="controls_if">
-                <mutation else="1"></mutation>
-            </block>
-            <block type="controls_if">
-                <mutation elseif="1" else="1"></mutation>
-            </block>
+            <block type="controls_if"><mutation else="1"></mutation></block>
+            <block type="controls_if"><mutation elseif="1" else="1"></mutation></block>
+            <block type="logic_compare"></block>
+            <block type="logic_operation"></block>
+            <block type="logic_negate"></block>
         </category>
         <category name="Checks" colour="210">
             <block type="check_card_type"></block>
@@ -142,59 +141,59 @@
             <block type="check_credits"></block>
             <block type="check_tags"></block>
             <block type="check_encounter"></block>
+            <block type="check_running"></block>
+            <block type="check_accessing"></block>
         </category>
         <category name="Actions" colour="290">
-            <block type="trash_card"></block>
             <block type="gain_credits"></block>
             <block type="lose_credits"></block>
             <block type="draw_cards"></block>
             <block type="add_tags"></block>
+            <block type="sabotage"></block>
+            <block type="damage"></block>
+            <block type="trash_card"></block>
             <block type="end_run"></block>
+            <block type="lose_clicks"></block>
+            <block type="gain_clicks"></block>
+            <block type="derez"></block>
         </category>
         <category name="Values" colour="%{BKY_MATH_HUE}">
-            <block type="math_number">
-                <field name="NUM">1</field>
-            </block>
+            <block type="math_number"><field name="NUM">1</field></block>
             <block type="text"></block>
             <block type="logic_boolean"></block>
+            <block type="logic_null"></block>
         </category>
         <category name="Variables" colour="%{BKY_VARIABLES_HUE}" custom="VARIABLE"></category>
+        <category name="Game State" colour="160">
+            <block type="game_variable_runner"></block>
+            <block type="game_variable_corp"></block>
+            <block type="game_variable_this"></block>
+            <block type="game_variable_accessing_card"></block>
+        </category>
     </xml>
 
     <script src="https://cdn.jsdelivr.net/gh/alecdvor/netrunner-db-app@main/netrunner-db-lib2.js"></script>
-    
     <script>
-        /**
-         * Netrunner DB Editor - Main Application File v1.2
-         * Handles event listeners and new feature development.
-         */
-        
         document.addEventListener('DOMContentLoaded', () => {
             NetrunnerDB.cacheDom();
             const dom = NetrunnerDB.dom;
 
-            // --- Attach Event Listeners to Core Functions ---
             dom.fileUpload.addEventListener('change', (e) => NetrunnerDB.handleFileUpload(e));
             dom.startNewBtn.addEventListener('click', () => NetrunnerDB.handleStartNewFile());
             dom.downloadBtn.addEventListener('click', () => NetrunnerDB.handleFileDownload());
             dom.addCardBtn.addEventListener('click', () => NetrunnerDB.handleAddCard());
             dom.saveCardBtn.addEventListener('click', () => NetrunnerDB.handleSaveChanges());
             dom.deleteCardBtn.addEventListener('click', () => NetrunnerDB.handleDeleteCard());
-
-            // --- Field Management Modal Listeners ---
             dom.manageFieldsBtn.addEventListener('click', () => NetrunnerDB.openManageFieldsModal());
             dom.closeModalBtn.addEventListener('click', () => dom.fieldsModal.classList.add('hidden'));
             dom.fieldsModal.addEventListener('click', (e) => { if (e.target === dom.fieldsModal) dom.fieldsModal.classList.add('hidden'); });
             dom.addFieldBtn.addEventListener('click', () => NetrunnerDB.handleAddFieldToModal());
             dom.applyFieldsBtn.addEventListener('click', () => NetrunnerDB.handleApplyFieldChanges());
-
-            // --- File Settings Modal Listeners ---
             dom.fileSettingsBtn.addEventListener('click', () => NetrunnerDB.openFileSettingsModal());
             dom.closeFileSettingsBtn.addEventListener('click', () => dom.fileSettingsModal.classList.add('hidden'));
             dom.fileSettingsModal.addEventListener('click', (e) => { if (e.target === dom.fileSettingsModal) dom.fileSettingsModal.classList.add('hidden'); });
             dom.saveFileSettingsBtn.addEventListener('click', () => NetrunnerDB.saveFileSettings());
 
-            // --- NEW: Blockly Programmer ---
             const blockBuilderModal = document.getElementById('block-builder-modal');
             const closeBlockBuilderBtn = document.getElementById('close-block-builder-btn');
             const applyCodeBtn = document.getElementById('apply-code-btn');
@@ -202,129 +201,9 @@
             const toolbox = document.getElementById('toolbox');
             let blocklyWorkspace;
 
-            // --- Blockly Custom Block Definitions ---
-            Blockly.defineBlocksWithJsonArray([
-                // Checks
-                {
-                    "type": "check_card_type",
-                    "message0": "Card type is %1",
-                    "args0": [{"type": "field_input", "name": "TYPE", "text": "program"}],
-                    "output": "Boolean", "colour": 210, "tooltip": "Checks if the card's type matches."
-                },
-                {
-                    "type": "check_sub_type",
-                    "message0": "Card subtype is %1",
-                    "args0": [{"type": "field_input", "name": "SUBTYPE", "text": "icebreaker"}],
-                    "output": "Boolean", "colour": 210, "tooltip": "Checks if the card's subtype matches."
-                },
-                {
-                    "type": "check_credits",
-                    "message0": "%1 has at least %2 credits",
-                    "args0": [
-                        {"type": "field_dropdown", "name": "PLAYER", "options": [["runner", "runner"], ["corp", "corp"]]},
-                        {"type": "input_value", "name": "AMOUNT", "check": "Number"}
-                    ],
-                    "output": "Boolean", "colour": 210, "tooltip": "Checks if a player has a certain amount of credits."
-                },
-                {
-                    "type": "check_tags",
-                    "message0": "Runner has at least %1 tags",
-                    "args0": [{"type": "input_value", "name": "AMOUNT", "check": "Number"}],
-                    "output": "Boolean", "colour": 210, "tooltip": "Checks if the runner has a certain number of tags."
-                },
-                {
-                    "type": "check_encounter",
-                    "message0": "Runner is encountering this ice",
-                    "output": "Boolean", "colour": 210, "tooltip": "Checks if the current event is an encounter."
-                },
-                // Actions
-                {
-                    "type": "trash_card",
-                    "message0": "Trash %1",
-                    "args0": [{"type": "input_value", "name": "CARD"}],
-                    "previousStatement": null, "nextStatement": null, "colour": 290, "tooltip": "Trashes a card."
-                },
-                {
-                    "type": "gain_credits",
-                    "message0": "%1 gains %2 credits",
-                    "args0": [
-                        {"type": "field_dropdown", "name": "PLAYER", "options": [["runner", "runner"], ["corp", "corp"]]},
-                        {"type": "input_value", "name": "AMOUNT", "check": "Number"}
-                    ],
-                    "previousStatement": null, "nextStatement": null, "colour": 290, "tooltip": "Player gains credits."
-                },
-                 {
-                    "type": "lose_credits",
-                    "message0": "%1 loses %2 credits",
-                    "args0": [
-                        {"type": "field_dropdown", "name": "PLAYER", "options": [["runner", "runner"], ["corp", "corp"]]},
-                        {"type": "input_value", "name": "AMOUNT", "check": "Number"}
-                    ],
-                    "previousStatement": null, "nextStatement": null, "colour": 290, "tooltip": "Player loses credits."
-                },
-                {
-                    "type": "draw_cards",
-                    "message0": "%1 draws %2 cards",
-                     "args0": [
-                        {"type": "field_dropdown", "name": "PLAYER", "options": [["runner", "runner"], ["corp", "corp"]]},
-                        {"type": "input_value", "name": "AMOUNT", "check": "Number"}
-                    ],
-                    "previousStatement": null, "nextStatement": null, "colour": 290, "tooltip": "Player draws cards."
-                },
-                {
-                    "type": "add_tags",
-                    "message0": "Runner gains %1 tags",
-                    "args0": [{"type": "input_value", "name": "AMOUNT", "check": "Number"}],
-                    "previousStatement": null, "nextStatement": null, "colour": 290, "tooltip": "Give the runner tags."
-                },
-                {
-                    "type": "end_run",
-                    "message0": "End the run",
-                    "previousStatement": null, "nextStatement": null, "colour": 290, "tooltip": "Ends the current run."
-                }
-            ]);
+            // --- ALL NEW BLOCK DEFINITIONS AND GENERATORS ---
+            initializeCustomBlocks();
 
-            // --- Blockly Custom Code Generators ---
-            const js = Blockly.JavaScript;
-            js.forBlock['check_card_type'] = block => [`CheckCardType(card, ["${block.getFieldValue('TYPE')}"])`, js.ORDER_FUNCTION_CALL];
-            js.forBlock['check_sub_type'] = block => [`CheckSubType(card, "${block.getFieldValue('SUBTYPE')}")`, js.ORDER_FUNCTION_CALL];
-            js.forBlock['check_credits'] = block => {
-                const player = block.getFieldValue('PLAYER');
-                const amount = js.valueToCode(block, 'AMOUNT', js.ORDER_ATOMIC) || '0';
-                return [`CheckCredits(${player}, ${amount})`, js.ORDER_FUNCTION_CALL];
-            };
-            js.forBlock['check_tags'] = block => {
-                const amount = js.valueToCode(block, 'AMOUNT', js.ORDER_ATOMIC) || '0';
-                return [`CheckTags(${amount})`, js.ORDER_FUNCTION_CALL];
-            };
-            js.forBlock['check_encounter'] = block => ['CheckEncounter()', js.ORDER_FUNCTION_CALL];
-            js.forBlock['trash_card'] = block => {
-                const card = js.valueToCode(block, 'CARD', js.ORDER_ATOMIC) || 'null';
-                return `Trash(${card}, true);\n`;
-            };
-            js.forBlock['gain_credits'] = block => {
-                const player = block.getFieldValue('PLAYER');
-                const amount = js.valueToCode(block, 'AMOUNT', js.ORDER_ATOMIC) || '0';
-                return `GainCredits(${player}, ${amount});\n`;
-            };
-            js.forBlock['lose_credits'] = block => {
-                const player = block.getFieldValue('PLAYER');
-                const amount = js.valueToCode(block, 'AMOUNT', js.ORDER_ATOMIC) || '0';
-                return `LoseCredits(${player}, ${amount});\n`;
-            };
-             js.forBlock['draw_cards'] = block => {
-                const player = block.getFieldValue('PLAYER');
-                const amount = js.valueToCode(block, 'AMOUNT', js.ORDER_ATOMIC) || '0';
-                return `Draw(${player}, ${amount});\n`;
-            };
-            js.forBlock['add_tags'] = block => {
-                const amount = js.valueToCode(block, 'AMOUNT', js.ORDER_ATOMIC) || '0';
-                return `AddTags(${amount});\n`;
-            };
-            js.forBlock['end_run'] = block => 'EndTheRun();\n';
-
-
-            // --- Connect Blockly to UI ---
             closeBlockBuilderBtn.addEventListener('click', () => {
                 blockBuilderModal.classList.add('hidden');
                 disposeBlockly();
@@ -342,11 +221,10 @@
                 let existingCode = '';
                 if (targetInput && targetInput.value) {
                     try {
-                        // Extract just the function body from the saved object string
-                        const funcRegex = /Resolve:\s*function\s*\([^)]*\)\s*\{([\s\S]*)\}/;
+                        const funcRegex = /(Resolve|Enumerate):\s*function\s*\([^)]*\)\s*\{([\s\S]*)\}/;
                         const match = funcRegex.exec(targetInput.value);
-                        if (match && match[1]) {
-                            existingCode = match[1].trim();
+                        if (match && match[2]) {
+                            existingCode = match[2].trim();
                         }
                     } catch(e) { console.error("Could not parse existing code.", e); }
                 }
@@ -374,11 +252,8 @@
                 }
             }
             
-            // --- UPDATED WORKSPACE LIFECYCLE LOGIC & CODE LOADING ---
             function initializeBlockly(codeToLoad = '') {
-                console.log("Attempting to initialize Blockly...");
                 if (blocklyDiv.offsetHeight > 0) {
-                    console.log("Blockly DIV is visible. Injecting workspace.");
                     blocklyWorkspace = Blockly.inject(blocklyDiv, {
                         toolbox: toolbox,
                         renderer: 'zelos',
@@ -389,9 +264,8 @@
 
                     if (codeToLoad) {
                         try {
-                            console.log("Attempting to load code into blocks:", codeToLoad);
                             const ast = acorn.parse(codeToLoad, {ecmaVersion: 2020});
-                            buildBlocksFromAst(ast.body, null, 'next');
+                            buildBlocksFromAst(ast.body);
                             blocklyWorkspace.render();
                         } catch (e) {
                             console.error("Failed to convert code to blocks:", e);
@@ -399,7 +273,6 @@
                         }
                     }
                 } else {
-                    console.warn("Blockly DIV not visible yet. Retrying in 10ms.");
                     setTimeout(() => initializeBlockly(codeToLoad), 10);
                 }
             }
@@ -408,106 +281,127 @@
                 if (blocklyWorkspace) {
                     blocklyWorkspace.dispose();
                     blocklyWorkspace = null;
-                    console.log("Blockly workspace disposed.");
                 }
             }
 
-            // --- NEW: AST to BLOCKS CONVERSION LOGIC ---
-            const blockMappings = {
-                'GainCredits': {type: 'gain_credits', args: ['PLAYER', 'AMOUNT']},
-                'Draw': {type: 'draw_cards', args: ['PLAYER', 'AMOUNT']},
-                'Sabotage': {type: 'add_tags', args: ['AMOUNT']}, // Assuming Sabotage maps to Add Tags
-                'CheckCardType': {type: 'check_card_type', args: ['TYPE']},
-                'CheckSubType': {type: 'check_sub_type', args: ['SUBTYPE']}
-            };
-
-            function buildBlocksFromAst(statements, parentBlock, connectionType) {
-                let previousBlock = parentBlock;
-                let lastConnectionType = connectionType;
-
+            // --- NEW AST-TO-BLOCKS CONVERSION LOGIC ---
+            function buildBlocksFromAst(statements) {
+                let lastBlock = null;
                 statements.forEach(stmt => {
-                    let currentBlock = null;
-                    if (stmt.type === 'ExpressionStatement' && stmt.expression.type === 'CallExpression') {
-                        currentBlock = processCallExpression(stmt.expression);
-                    } else if (stmt.type === 'IfStatement') {
-                        currentBlock = processIfStatement(stmt);
-                    }
-                    
-                    if (currentBlock) {
-                        if (previousBlock) {
-                            const connection = getConnection(previousBlock, lastConnectionType);
-                            if (connection && connection.targetConnection !== currentBlock.previousConnection) {
-                                connection.connect(currentBlock.previousConnection);
-                            }
+                    const newBlock = processStatement(stmt);
+                    if (newBlock) {
+                        if (lastBlock && lastBlock.nextConnection) {
+                            lastBlock.nextConnection.connect(newBlock.previousConnection);
                         }
-                        previousBlock = currentBlock;
-                        lastConnectionType = 'next';
+                        lastBlock = newBlock;
                     }
                 });
             }
 
-            function getConnection(block, type) {
-                if (type === 'next') return block.nextConnection;
-                if (type === 'if_true') return block.getInput('DO0').connection;
-                if (type === 'if_false') return block.getInput('ELSE').connection;
-                return null;
+            function processStatement(stmt) {
+                if (!stmt) return null;
+                switch(stmt.type) {
+                    case 'ExpressionStatement': return processExpression(stmt.expression);
+                    case 'IfStatement': return processIfStatement(stmt);
+                    case 'VariableDeclaration': return processVariableDeclaration(stmt);
+                    default: console.warn("Unsupported statement type:", stmt.type); return null;
+                }
             }
 
-            function processCallExpression(expr) {
-                const funcName = expr.callee.name;
-                const mapping = blockMappings[funcName];
-                if (!mapping) {
-                     console.warn(`No block mapping for function: ${funcName}`);
-                     return null;
+            function processExpression(expr) {
+                 if (expr.type === 'CallExpression') {
+                    const block = createBlockFromCall(expr);
+                    if (block) block.initSvg();
+                    return block;
                 }
-                
-                const newBlock = blocklyWorkspace.newBlock(mapping.type);
-                
-                // Simplified argument mapping
-                if (mapping.args.length > 0 && expr.arguments.length > 0) {
-                     if(mapping.type === 'gain_credits' || mapping.type === 'draw_cards' || mapping.type === 'lose_credits') {
-                         newBlock.setFieldValue(expr.arguments[0].name, mapping.args[0]); // player
-                         const valueBlock = blocklyWorkspace.newBlock('math_number');
-                         valueBlock.setFieldValue(expr.arguments[1].value, 'NUM');
-                         newBlock.getInput(mapping.args[1]).connection.connect(valueBlock.outputConnection);
-                     } else {
-                        // Handle other simpler cases
-                     }
-                }
-                newBlock.initSvg();
-                return newBlock;
+                console.warn("Unsupported expression type:", expr.type);
+                return null;
             }
 
             function processIfStatement(stmt) {
                 const ifBlock = blocklyWorkspace.newBlock('controls_if');
-
-                // Process the condition (test)
-                if (stmt.test.type === 'CallExpression') {
-                    const conditionBlock = processCallExpression(stmt.test);
-                    if (conditionBlock) {
-                        ifBlock.getInput('IF0').connection.connect(conditionBlock.outputConnection);
-                    }
-                }
-
-                // Process the 'if true' block (consequent)
-                if (stmt.consequent && stmt.consequent.type === 'BlockStatement') {
-                    buildBlocksFromAst(stmt.consequent.body, ifBlock, 'if_true');
+                
+                const conditionBlock = processExpression(stmt.test);
+                if (conditionBlock) {
+                    ifBlock.getInput('IF0').connection.connect(conditionBlock.outputConnection);
                 }
                 
-                // Process the 'if false' block (alternate)
+                let lastBlockInIf = null;
+                if (stmt.consequent && stmt.consequent.body) {
+                    stmt.consequent.body.forEach(s => {
+                        const newBlock = processStatement(s);
+                        if (newBlock) {
+                           if (!lastBlockInIf) {
+                               ifBlock.getInput('DO0').connection.connect(newBlock.previousConnection);
+                           } else {
+                               lastBlockInIf.nextConnection.connect(newBlock.previousConnection);
+                           }
+                           lastBlockInIf = newBlock;
+                        }
+                    });
+                }
+                
                 if (stmt.alternate) {
-                    ifBlock.appendStatementInput('ELSE').appendField('else'); // Ensure the ELSE part exists
-                    if (stmt.alternate.type === 'BlockStatement') {
-                        buildBlocksFromAst(stmt.alternate.body, ifBlock, 'if_false');
-                    } else if (stmt.alternate.type === 'IfStatement') {
-                         // Handle else-if chains (more complex, simplified for now)
-                         console.warn("Else-if chains are not fully supported yet.");
+                    ifBlock.appendStatementInput('ELSE').appendField('else');
+                     let lastBlockInElse = null;
+                    if (stmt.alternate.body) {
+                        stmt.alternate.body.forEach(s => {
+                             const newBlock = processStatement(s);
+                             if (newBlock) {
+                                if(!lastBlockInElse) {
+                                    ifBlock.getInput('ELSE').connection.connect(newBlock.previousConnection);
+                                } else {
+                                    lastBlockInElse.nextConnection.connect(newBlock.previousConnection);
+                                }
+                                lastBlockInElse = newBlock;
+                             }
+                        });
                     }
                 }
                 
                 ifBlock.initSvg();
                 return ifBlock;
             }
+             
+            function processVariableDeclaration(stmt) {
+                // Simplified: handles 'var x = y;'
+                const declaration = stmt.declarations[0];
+                const varName = declaration.id.name;
+                const valueBlock = processExpression(declaration.init);
+                
+                const setBlock = blocklyWorkspace.newBlock('variables_set');
+                setBlock.setFieldValue(varName, 'VAR');
+                if (valueBlock) {
+                    setBlock.getInput('VALUE').connection.connect(valueBlock.outputConnection);
+                }
+                setBlock.initSvg();
+                return setBlock;
+            }
+
+            function createBlockFromCall(expr) {
+                const funcName = expr.callee.name;
+                const mapping = blockMappings[funcName];
+                if (!mapping) return null;
+
+                const newBlock = blocklyWorkspace.newBlock(mapping.type);
+                expr.arguments.forEach((arg, i) => {
+                    const inputName = mapping.args[i];
+                    if (arg.type === 'Literal') {
+                        newBlock.setFieldValue(arg.value.toString(), inputName);
+                    } else if (arg.type === 'Identifier') {
+                        const varBlock = blocklyWorkspace.newBlock('variables_get');
+                        varBlock.setFieldValue(arg.name, 'VAR');
+                        newBlock.getInput(inputName).connection.connect(varBlock.outputConnection);
+                    } else if (arg.type === 'CallExpression') {
+                         const nestedBlock = createBlockFromCall(arg);
+                         if (nestedBlock) {
+                            newBlock.getInput(inputName).connection.connect(nestedBlock.outputConnection);
+                         }
+                    }
+                });
+                return newBlock;
+            }
+
         });
     </script>
 </body> 
