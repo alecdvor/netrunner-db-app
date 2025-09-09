@@ -183,7 +183,7 @@
         </category>
     </xml>
 
-    <script src="https://cdn.jsdelivr.net/gh/alecdvor/netrunner-db-app@main/netrunner-db-lib.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/alecdvor/netrunner-db-app@main/netrunner-db-lib2.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             NetrunnerDB.cacheDom();
@@ -263,7 +263,6 @@
             }
             
             function initializeBlockly(codeToLoad = '') {
-                console.log("Initializing Blockly with code:", codeToLoad);
                 if (blocklyDiv.offsetHeight > 0) {
                     blocklyWorkspace = Blockly.inject(blocklyDiv, {
                         toolbox: toolbox,
