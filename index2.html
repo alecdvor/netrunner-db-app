@@ -10,6 +10,7 @@
     <script src="https://unpkg.com/blockly/blocks_compressed.js"></script>
     <script src="https://unpkg.com/blockly/javascript_compressed.js"></script>
     <script src="https://unpkg.com/blockly/msg/en.js"></script>
+    <script src="https://unpkg.com/acorn/dist/acorn.js"></script>
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -322,57 +323,45 @@
             };
             js.forBlock['end_run'] = block => 'EndTheRun();\n';
 
-            // --- UPDATED INITIALIZATION LOGIC ---
-            function initializeBlockly() {
-                console.log("Attempting to initialize Blockly...");
-                // Check if the div is visible and has a size.
-                if (blocklyDiv.offsetHeight > 0) {
-                    console.log("Blockly DIV is visible. Injecting workspace.");
-                    if (blocklyWorkspace) {
-                        blocklyWorkspace.dispose();
-                    }
-                    blocklyWorkspace = Blockly.inject(blocklyDiv, {
-                        toolbox: toolbox,
-                        renderer: 'zelos',
-                        theme: Blockly.Themes.Dark,
-                        grid: { spacing: 20, length: 3, colour: '#4a5568', snap: true },
-                        zoom: { controls: true, wheel: true, startScale: 1.0, maxScale: 3, minScale: 0.3, scaleSpeed: 1.2 }
-                    });
-                    
-                    // Handle workspace resizing
-                    const onresize = function(e) {
-                        // Put the resizing into a timeout to wait for the DOM to finish resizing.
-                        setTimeout(() => Blockly.svgResize(blocklyWorkspace), 0);
-                    };
-                    window.addEventListener('resize', onresize, false);
-                    Blockly.svgResize(blocklyWorkspace);
-
-                } else {
-                    // If the div is not visible, wait and try again.
-                    console.warn("Blockly DIV not visible yet. Retrying in 10ms.");
-                    setTimeout(initializeBlockly, 10);
-                }
-            }
 
             // --- Connect Blockly to UI ---
-            closeBlockBuilderBtn.addEventListener('click', () => blockBuilderModal.classList.add('hidden'));
-            applyCodeBtn.addEventListener('click', applyGeneratedCode);
+            closeBlockBuilderBtn.addEventListener('click', () => {
+                blockBuilderModal.classList.add('hidden');
+                disposeBlockly();
+            });
             
-            // Override the default button click in the library
+            applyCodeBtn.addEventListener('click', () => {
+                applyGeneratedCode();
+                blockBuilderModal.classList.add('hidden');
+                disposeBlockly();
+            });
+            
             NetrunnerDB.openBlockBuilder = function() {
+                const fieldKey = NetrunnerDB.currentlyBuildingField;
+                const targetInput = dom.editorContent.querySelector(`[name="${fieldKey}"]`);
+                let existingCode = '';
+                if (targetInput && targetInput.value) {
+                    try {
+                        // Extract just the function body from the saved object string
+                        const funcRegex = /Resolve:\s*function\s*\([^)]*\)\s*\{([\s\S]*)\}/;
+                        const match = funcRegex.exec(targetInput.value);
+                        if (match && match[1]) {
+                            existingCode = match[1].trim();
+                        }
+                    } catch(e) { console.error("Could not parse existing code.", e); }
+                }
+
                 console.log("openBlockBuilder called. Showing modal.");
                 blockBuilderModal.classList.remove('hidden');
-                // The initialization is now more robust.
-                initializeBlockly();
+                initializeBlockly(existingCode);
             }
             
             function applyGeneratedCode() {
                 const code = Blockly.JavaScript.workspaceToCode(blocklyWorkspace);
                 const fieldKey = NetrunnerDB.currentlyBuildingField;
-                const targetInput = NetrunnerDB.dom.editorContent.querySelector(`[name="${fieldKey}"]`);
+                const targetInput = dom.editorContent.querySelector(`[name="${fieldKey}"]`);
 
                 if (targetInput) {
-                    // Recreate the object structure with the generated code
                     const functionWrapper = `{ Resolve: function(card) {\n${code}\n} }`;
                     try {
                         const codeObject = new Function(`return ${functionWrapper}`)();
@@ -383,7 +372,141 @@
                          NetrunnerDB.showMessage('Could not apply code. Invalid logic.', 'error');
                     }
                 }
-                blockBuilderModal.classList.add('hidden');
+            }
+            
+            // --- UPDATED WORKSPACE LIFECYCLE LOGIC & CODE LOADING ---
+            function initializeBlockly(codeToLoad = '') {
+                console.log("Attempting to initialize Blockly...");
+                if (blocklyDiv.offsetHeight > 0) {
+                    console.log("Blockly DIV is visible. Injecting workspace.");
+                    blocklyWorkspace = Blockly.inject(blocklyDiv, {
+                        toolbox: toolbox,
+                        renderer: 'zelos',
+                        theme: Blockly.Themes.Dark,
+                        grid: { spacing: 20, length: 3, colour: '#4a5568', snap: true },
+                        zoom: { controls: true, wheel: true, startScale: 1.0, maxScale: 3, minScale: 0.3, scaleSpeed: 1.2 }
+                    });
+
+                    if (codeToLoad) {
+                        try {
+                            console.log("Attempting to load code into blocks:", codeToLoad);
+                            const ast = acorn.parse(codeToLoad, {ecmaVersion: 2020});
+                            buildBlocksFromAst(ast.body, null, 'next');
+                            blocklyWorkspace.render();
+                        } catch (e) {
+                            console.error("Failed to convert code to blocks:", e);
+                            NetrunnerDB.showMessage("Could not load existing code into blocks.", "error");
+                        }
+                    }
+                } else {
+                    console.warn("Blockly DIV not visible yet. Retrying in 10ms.");
+                    setTimeout(() => initializeBlockly(codeToLoad), 10);
+                }
+            }
+            
+            function disposeBlockly() {
+                if (blocklyWorkspace) {
+                    blocklyWorkspace.dispose();
+                    blocklyWorkspace = null;
+                    console.log("Blockly workspace disposed.");
+                }
+            }
+
+            // --- NEW: AST to BLOCKS CONVERSION LOGIC ---
+            const blockMappings = {
+                'GainCredits': {type: 'gain_credits', args: ['PLAYER', 'AMOUNT']},
+                'Draw': {type: 'draw_cards', args: ['PLAYER', 'AMOUNT']},
+                'Sabotage': {type: 'add_tags', args: ['AMOUNT']}, // Assuming Sabotage maps to Add Tags
+                'CheckCardType': {type: 'check_card_type', args: ['TYPE']},
+                'CheckSubType': {type: 'check_sub_type', args: ['SUBTYPE']}
+            };
+
+            function buildBlocksFromAst(statements, parentBlock, connectionType) {
+                let previousBlock = parentBlock;
+                let lastConnectionType = connectionType;
+
+                statements.forEach(stmt => {
+                    let currentBlock = null;
+                    if (stmt.type === 'ExpressionStatement' && stmt.expression.type === 'CallExpression') {
+                        currentBlock = processCallExpression(stmt.expression);
+                    } else if (stmt.type === 'IfStatement') {
+                        currentBlock = processIfStatement(stmt);
+                    }
+                    
+                    if (currentBlock) {
+                        if (previousBlock) {
+                            const connection = getConnection(previousBlock, lastConnectionType);
+                            if (connection && connection.targetConnection !== currentBlock.previousConnection) {
+                                connection.connect(currentBlock.previousConnection);
+                            }
+                        }
+                        previousBlock = currentBlock;
+                        lastConnectionType = 'next';
+                    }
+                });
+            }
+
+            function getConnection(block, type) {
+                if (type === 'next') return block.nextConnection;
+                if (type === 'if_true') return block.getInput('DO0').connection;
+                if (type === 'if_false') return block.getInput('ELSE').connection;
+                return null;
+            }
+
+            function processCallExpression(expr) {
+                const funcName = expr.callee.name;
+                const mapping = blockMappings[funcName];
+                if (!mapping) {
+                     console.warn(`No block mapping for function: ${funcName}`);
+                     return null;
+                }
+                
+                const newBlock = blocklyWorkspace.newBlock(mapping.type);
+                
+                // Simplified argument mapping
+                if (mapping.args.length > 0 && expr.arguments.length > 0) {
+                     if(mapping.type === 'gain_credits' || mapping.type === 'draw_cards' || mapping.type === 'lose_credits') {
+                         newBlock.setFieldValue(expr.arguments[0].name, mapping.args[0]); // player
+                         const valueBlock = blocklyWorkspace.newBlock('math_number');
+                         valueBlock.setFieldValue(expr.arguments[1].value, 'NUM');
+                         newBlock.getInput(mapping.args[1]).connection.connect(valueBlock.outputConnection);
+                     } else {
+                        // Handle other simpler cases
+                     }
+                }
+                newBlock.initSvg();
+                return newBlock;
+            }
+
+            function processIfStatement(stmt) {
+                const ifBlock = blocklyWorkspace.newBlock('controls_if');
+
+                // Process the condition (test)
+                if (stmt.test.type === 'CallExpression') {
+                    const conditionBlock = processCallExpression(stmt.test);
+                    if (conditionBlock) {
+                        ifBlock.getInput('IF0').connection.connect(conditionBlock.outputConnection);
+                    }
+                }
+
+                // Process the 'if true' block (consequent)
+                if (stmt.consequent && stmt.consequent.type === 'BlockStatement') {
+                    buildBlocksFromAst(stmt.consequent.body, ifBlock, 'if_true');
+                }
+                
+                // Process the 'if false' block (alternate)
+                if (stmt.alternate) {
+                    ifBlock.appendStatementInput('ELSE').appendField('else'); // Ensure the ELSE part exists
+                    if (stmt.alternate.type === 'BlockStatement') {
+                        buildBlocksFromAst(stmt.alternate.body, ifBlock, 'if_false');
+                    } else if (stmt.alternate.type === 'IfStatement') {
+                         // Handle else-if chains (more complex, simplified for now)
+                         console.warn("Else-if chains are not fully supported yet.");
+                    }
+                }
+                
+                ifBlock.initSvg();
+                return ifBlock;
             }
         });
     </script>
