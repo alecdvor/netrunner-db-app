@@ -143,8 +143,10 @@
             <block type="check_encounter"></block>
             <block type="check_running"></block>
             <block type="check_accessing"></block>
+            <block type="check_counters"></block>
         </category>
         <category name="Actions" colour="290">
+             <block type="make_run"></block>
             <block type="gain_credits"></block>
             <block type="lose_credits"></block>
             <block type="draw_cards"></block>
@@ -156,6 +158,11 @@
             <block type="lose_clicks"></block>
             <block type="gain_clicks"></block>
             <block type="derez"></block>
+            <block type="add_counters"></block>
+            <block type="remove_counters"></block>
+            <block type="break_subroutine"></block>
+            <block type="bypass_ice"></block>
+            <block type="boost_strength"></block>
         </category>
         <category name="Values" colour="%{BKY_MATH_HUE}">
             <block type="math_number"><field name="NUM">1</field></block>
@@ -169,6 +176,8 @@
             <block type="game_variable_corp"></block>
             <block type="game_variable_this"></block>
             <block type="game_variable_accessing_card"></block>
+            <block type="game_variable_attacked_server"></block>
+            <block type="set_this_property"></block>
         </category>
     </xml>
 
@@ -201,7 +210,6 @@
             const toolbox = document.getElementById('toolbox');
             let blocklyWorkspace;
 
-            // --- ALL NEW BLOCK DEFINITIONS AND GENERATORS ---
             initializeCustomBlocks();
 
             closeBlockBuilderBtn.addEventListener('click', () => {
@@ -228,8 +236,6 @@
                         }
                     } catch(e) { console.error("Could not parse existing code.", e); }
                 }
-
-                console.log("openBlockBuilder called. Showing modal.");
                 blockBuilderModal.classList.remove('hidden');
                 initializeBlockly(existingCode);
             }
@@ -283,8 +289,7 @@
                     blocklyWorkspace = null;
                 }
             }
-
-            // --- NEW AST-TO-BLOCKS CONVERSION LOGIC ---
+            
             function buildBlocksFromAst(statements) {
                 let lastBlock = null;
                 statements.forEach(stmt => {
@@ -304,19 +309,40 @@
                     case 'ExpressionStatement': return processExpression(stmt.expression);
                     case 'IfStatement': return processIfStatement(stmt);
                     case 'VariableDeclaration': return processVariableDeclaration(stmt);
+                    case 'ReturnStatement': return processReturnStatement(stmt);
                     default: console.warn("Unsupported statement type:", stmt.type); return null;
                 }
             }
 
-            function processExpression(expr) {
-                 if (expr.type === 'CallExpression') {
-                    const block = createBlockFromCall(expr);
-                    if (block) block.initSvg();
-                    return block;
+             function processExpression(expr) {
+                switch(expr.type) {
+                    case 'CallExpression':
+                        const block = createBlockFromCall(expr);
+                        if (block) block.initSvg();
+                        return block;
+                    case 'AssignmentExpression':
+                        return processAssignment(expr);
+                    default:
+                        console.warn("Unsupported expression type:", expr.type);
+                        return null;
                 }
-                console.warn("Unsupported expression type:", expr.type);
+            }
+
+             function processAssignment(expr) {
+                if (expr.left.type === 'MemberExpression' && expr.left.object.type === 'ThisExpression') {
+                    const propName = expr.left.property.name;
+                    const valueBlock = createValueBlock(expr.right);
+                    const setBlock = blocklyWorkspace.newBlock('set_this_property');
+                    setBlock.setFieldValue(propName, 'PROPERTY');
+                    if (valueBlock) {
+                        setBlock.getInput('VALUE').connection.connect(valueBlock.outputConnection);
+                    }
+                    setBlock.initSvg();
+                    return setBlock;
+                }
                 return null;
             }
+
 
             function processIfStatement(stmt) {
                 const ifBlock = blocklyWorkspace.newBlock('controls_if');
@@ -364,10 +390,9 @@
             }
              
             function processVariableDeclaration(stmt) {
-                // Simplified: handles 'var x = y;'
                 const declaration = stmt.declarations[0];
                 const varName = declaration.id.name;
-                const valueBlock = processExpression(declaration.init);
+                const valueBlock = createValueBlock(declaration.init);
                 
                 const setBlock = blocklyWorkspace.newBlock('variables_set');
                 setBlock.setFieldValue(varName, 'VAR');
@@ -376,6 +401,44 @@
                 }
                 setBlock.initSvg();
                 return setBlock;
+            }
+            
+            function processReturnStatement(stmt) {
+                 const returnBlock = blocklyWorkspace.newBlock('procedures_ifreturn');
+                 const valueBlock = createValueBlock(stmt.argument);
+                 if (valueBlock) {
+                    returnBlock.getInput('VALUE').connection.connect(valueBlock.outputConnection);
+                 }
+                 returnBlock.initSvg();
+                 return returnBlock;
+            }
+
+            function createValueBlock(node) {
+                if (!node) return null;
+                 switch(node.type) {
+                    case 'Literal':
+                        const type = typeof node.value;
+                        let blockType;
+                        if (type === 'number') blockType = 'math_number';
+                        else if (type === 'string') blockType = 'text';
+                        else if (type === 'boolean') blockType = 'logic_boolean';
+                        else return null;
+
+                        const block = blocklyWorkspace.newBlock(blockType);
+                        const fieldName = (blockType === 'logic_boolean') ? 'BOOL' : (blockType === 'text' ? 'TEXT' : 'NUM');
+                        block.setFieldValue(node.value.toString(), fieldName);
+                        block.initSvg();
+                        return block;
+                    case 'Identifier':
+                         const varBlock = blocklyWorkspace.newBlock('variables_get');
+                         varBlock.setFieldValue(node.name, 'VAR');
+                         varBlock.initSvg();
+                         return varBlock;
+                    case 'CallExpression':
+                        return createBlockFromCall(node);
+                    default:
+                        return null;
+                 }
             }
 
             function createBlockFromCall(expr) {
@@ -386,22 +449,19 @@
                 const newBlock = blocklyWorkspace.newBlock(mapping.type);
                 expr.arguments.forEach((arg, i) => {
                     const inputName = mapping.args[i];
-                    if (arg.type === 'Literal') {
-                        newBlock.setFieldValue(arg.value.toString(), inputName);
-                    } else if (arg.type === 'Identifier') {
-                        const varBlock = blocklyWorkspace.newBlock('variables_get');
-                        varBlock.setFieldValue(arg.name, 'VAR');
-                        newBlock.getInput(inputName).connection.connect(varBlock.outputConnection);
-                    } else if (arg.type === 'CallExpression') {
-                         const nestedBlock = createBlockFromCall(arg);
-                         if (nestedBlock) {
-                            newBlock.getInput(inputName).connection.connect(nestedBlock.outputConnection);
-                         }
+                    if (arg.type === 'MemberExpression') {
+                         const memberBlock = blocklyWorkspace.newBlock('game_variable_corp');
+                         memberBlock.setFieldValue(arg.property.name, 'SERVER');
+                         newBlock.getInput(inputName).connection.connect(memberBlock.outputConnection);
+                    } else {
+                        const valueBlock = createValueBlock(arg);
+                        if (valueBlock) {
+                            newBlock.getInput(inputName).connection.connect(valueBlock.outputConnection);
+                        }
                     }
                 });
                 return newBlock;
             }
-
         });
     </script>
 </body> 
