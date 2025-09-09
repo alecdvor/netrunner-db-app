@@ -160,7 +160,7 @@
         <category name="Variables" colour="%{BKY_VARIABLES_HUE}" custom="VARIABLE"></category>
     </xml>
 
-    <script src="https://cdn.jsdelivr.net/gh/alecdvor/netrunner-db-app@main/netrunner-db-lib2.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/alecdvor/netrunner-db-app@main/netrunner-db-lib.js"></script>
     
     <script>
         /**
@@ -322,24 +322,36 @@
             };
             js.forBlock['end_run'] = block => 'EndTheRun();\n';
 
-
+            // --- UPDATED INITIALIZATION LOGIC ---
             function initializeBlockly() {
-                if (blocklyWorkspace) {
-                    blocklyWorkspace.dispose();
-                }
-                blocklyWorkspace = Blockly.inject(blocklyDiv, {
-                    toolbox: toolbox,
-                    renderer: 'zelos',
-                    theme: Blockly.Themes.Dark,
-                    grid: { spacing: 20, length: 3, colour: '#4a5568', snap: true },
-                    zoom: { controls: true, wheel: true, startScale: 1.0, maxScale: 3, minScale: 0.3, scaleSpeed: 1.2 }
-                });
-                 // Handle workspace resizing
-                const onresize = function(e) {
+                console.log("Attempting to initialize Blockly...");
+                // Check if the div is visible and has a size.
+                if (blocklyDiv.offsetHeight > 0) {
+                    console.log("Blockly DIV is visible. Injecting workspace.");
+                    if (blocklyWorkspace) {
+                        blocklyWorkspace.dispose();
+                    }
+                    blocklyWorkspace = Blockly.inject(blocklyDiv, {
+                        toolbox: toolbox,
+                        renderer: 'zelos',
+                        theme: Blockly.Themes.Dark,
+                        grid: { spacing: 20, length: 3, colour: '#4a5568', snap: true },
+                        zoom: { controls: true, wheel: true, startScale: 1.0, maxScale: 3, minScale: 0.3, scaleSpeed: 1.2 }
+                    });
+                    
+                    // Handle workspace resizing
+                    const onresize = function(e) {
+                        // Put the resizing into a timeout to wait for the DOM to finish resizing.
+                        setTimeout(() => Blockly.svgResize(blocklyWorkspace), 0);
+                    };
+                    window.addEventListener('resize', onresize, false);
                     Blockly.svgResize(blocklyWorkspace);
-                };
-                window.addEventListener('resize', onresize, false);
-                Blockly.svgResize(blocklyWorkspace);
+
+                } else {
+                    // If the div is not visible, wait and try again.
+                    console.warn("Blockly DIV not visible yet. Retrying in 10ms.");
+                    setTimeout(initializeBlockly, 10);
+                }
             }
 
             // --- Connect Blockly to UI ---
@@ -348,8 +360,10 @@
             
             // Override the default button click in the library
             NetrunnerDB.openBlockBuilder = function() {
+                console.log("openBlockBuilder called. Showing modal.");
                 blockBuilderModal.classList.remove('hidden');
-                setTimeout(initializeBlockly, 0); // Initialize after modal is visible
+                // The initialization is now more robust.
+                initializeBlockly();
             }
             
             function applyGeneratedCode() {
