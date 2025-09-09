@@ -294,17 +294,26 @@
                 }
             }
             
-            function buildBlocksFromAst(statements) {
-                let lastBlock = null;
-                statements.forEach(stmt => {
-                    const newBlock = processStatement(stmt);
-                    if (newBlock) {
-                        if (lastBlock && lastBlock.nextConnection) {
-                            lastBlock.nextConnection.connect(newBlock.previousConnection);
+             function buildBlocksFromAst(statements, parentConnection = null) {
+                let previousBlock = null;
+
+                for (const stmt of statements) {
+                    const currentBlock = processStatement(stmt);
+
+                    if (currentBlock) {
+                        if (parentConnection) {
+                            parentConnection.connect(currentBlock.previousConnection);
+                            parentConnection = null; 
+                        } else if (previousBlock && previousBlock.nextConnection) {
+                            previousBlock.nextConnection.connect(currentBlock.previousConnection);
                         }
-                        lastBlock = newBlock;
+                        
+                        previousBlock = currentBlock;
+                        while (previousBlock.nextConnection && previousBlock.nextConnection.targetBlock()) {
+                            previousBlock = previousBlock.nextConnection.targetBlock();
+                        }
                     }
-                });
+                }
             }
 
             function processStatement(stmt) {
@@ -327,8 +336,9 @@
                     case 'AssignmentExpression':
                         return processAssignment(expr);
                     default:
-                        console.warn("Unsupported expression type:", expr.type);
-                        return null;
+                        const valueBlock = createValueBlock(expr);
+                        if(valueBlock) valueBlock.initSvg();
+                        return valueBlock;
                 }
             }
 
@@ -347,49 +357,40 @@
                 return null;
             }
 
-
             function processIfStatement(stmt) {
                 const ifBlock = blocklyWorkspace.newBlock('controls_if');
-                
-                const conditionBlock = processExpression(stmt.test);
+                ifBlock.initSvg();
+
+                const conditionBlock = createValueBlock(stmt.test);
                 if (conditionBlock) {
                     ifBlock.getInput('IF0').connection.connect(conditionBlock.outputConnection);
                 }
                 
-                let lastBlockInIf = null;
-                if (stmt.consequent && stmt.consequent.body) {
-                    stmt.consequent.body.forEach(s => {
-                        const newBlock = processStatement(s);
-                        if (newBlock) {
-                           if (!lastBlockInIf) {
-                               ifBlock.getInput('DO0').connection.connect(newBlock.previousConnection);
-                           } else {
-                               lastBlockInIf.nextConnection.connect(newBlock.previousConnection);
-                           }
-                           lastBlockInIf = newBlock;
-                        }
-                    });
+                if (stmt.consequent && stmt.consequent.type === 'BlockStatement') {
+                    buildBlocksFromAst(stmt.consequent.body, ifBlock.getInput('DO0').connection);
                 }
                 
-                if (stmt.alternate) {
-                    ifBlock.appendStatementInput('ELSE').appendField('else');
-                     let lastBlockInElse = null;
-                    if (stmt.alternate.body) {
-                        stmt.alternate.body.forEach(s => {
-                             const newBlock = processStatement(s);
-                             if (newBlock) {
-                                if(!lastBlockInElse) {
-                                    ifBlock.getInput('ELSE').connection.connect(newBlock.previousConnection);
-                                } else {
-                                    lastBlockInElse.nextConnection.connect(newBlock.previousConnection);
-                                }
-                                lastBlockInElse = newBlock;
-                             }
-                        });
+                let- i = 0;
+                let alternate = stmt.alternate;
+                while (alternate && alternate.type === 'IfStatement') {
+                    i++;
+                    ifBlock.appendStatementInput('IF' + i).appendField('else if');
+                    const elseifCondition = createValueBlock(alternate.test);
+                    if (elseifCondition) {
+                        ifBlock.getInput('IF' + i).connection.connect(elseifCondition.outputConnection);
                     }
+                    if (alternate.consequent && alternate.consequent.type === 'BlockStatement') {
+                         ifBlock.appendStatementInput('DO' + i);
+                         buildBlocksFromAst(alternate.consequent.body, ifBlock.getInput('DO' + i).connection);
+                    }
+                    alternate = alternate.alternate;
                 }
                 
-                ifBlock.initSvg();
+                if (alternate && alternate.type === 'BlockStatement') {
+                    ifBlock.appendStatementInput('ELSE').appendField('else');
+                     buildBlocksFromAst(alternate.body, ifBlock.getInput('ELSE').connection);
+                }
+                
                 return ifBlock;
             }
              
@@ -419,6 +420,7 @@
 
             function createValueBlock(node) {
                 if (!node) return null;
+                 let block;
                  switch(node.type) {
                     case 'Literal':
                         const type = typeof node.value;
@@ -428,21 +430,38 @@
                         else if (type === 'boolean') blockType = 'logic_boolean';
                         else return null;
 
-                        const block = blocklyWorkspace.newBlock(blockType);
+                        block = blocklyWorkspace.newBlock(blockType);
                         const fieldName = (blockType === 'logic_boolean') ? 'BOOL' : (blockType === 'text' ? 'TEXT' : 'NUM');
                         block.setFieldValue(node.value.toString(), fieldName);
-                        block.initSvg();
-                        return block;
+                        break;
                     case 'Identifier':
-                         const varBlock = blocklyWorkspace.newBlock('variables_get');
-                         varBlock.setFieldValue(node.name, 'VAR');
-                         varBlock.initSvg();
-                         return varBlock;
+                         if(node.name === 'null') {
+                            block = blocklyWorkspace.newBlock('logic_null');
+                         } else {
+                            block = blocklyWorkspace.newBlock('variables_get');
+                            block.setFieldValue(node.name, 'VAR');
+                         }
+                         break;
                     case 'CallExpression':
-                        return createBlockFromCall(node);
+                        block = createBlockFromCall(node);
+                        break;
+                    case 'BinaryExpression':
+                        const opMap = { '==': 'EQ', '===': 'EQ', '!=': 'NEQ', '!==': 'NEQ', '<': 'LT', '<=': 'LTE', '>': 'GT', '>=': 'GTE'};
+                        const op = opMap[node.operator];
+                        if (op) {
+                            block = blocklyWorkspace.newBlock('logic_compare');
+                            block.setFieldValue(op, 'OP');
+                            const left = createValueBlock(node.left);
+                            const right = createValueBlock(node.right);
+                            if (left) block.getInput('A').connection.connect(left.outputConnection);
+                            if (right) block.getInput('B').connection.connect(right.outputConnection);
+                        }
+                        break;
                     default:
                         return null;
                  }
+                 if(block) block.initSvg();
+                 return block;
             }
 
             function createBlockFromCall(expr) {
@@ -452,14 +471,10 @@
 
                 const newBlock = blocklyWorkspace.newBlock(mapping.type);
                 expr.arguments.forEach((arg, i) => {
-                    const inputName = mapping.args[i];
-                    if (arg.type === 'MemberExpression') {
-                         const memberBlock = blocklyWorkspace.newBlock('game_variable_corp');
-                         memberBlock.setFieldValue(arg.property.name, 'SERVER');
-                         newBlock.getInput(inputName).connection.connect(memberBlock.outputConnection);
-                    } else {
+                    if (i < mapping.args.length) {
+                        const inputName = mapping.args[i];
                         const valueBlock = createValueBlock(arg);
-                        if (valueBlock) {
+                        if (valueBlock && newBlock.getInput(inputName)) {
                             newBlock.getInput(inputName).connection.connect(valueBlock.outputConnection);
                         }
                     }
@@ -505,8 +520,8 @@
                 Blockly.defineBlocksWithJsonArray(definitions);
                 const js = Blockly.JavaScript;
                  Object.assign(blockMappings, {
-                    'CheckCardType': { type: 'check_card_type', args: ['CARD', 'TYPE'] },
-                    'CheckSubType': { type: 'check_sub_type', args: ['CARD', 'SUBTYPE'] },
+                    'CheckCardType': { type: 'check_card_type', args: ['TYPE'] },
+                    'CheckSubType': { type: 'check_sub_type', args: ['SUBTYPE'] },
                     'CheckCredits': { type: 'check_credits', args: ['PLAYER', 'AMOUNT'] },
                     'CheckTags': { type: 'check_tags', args: ['AMOUNT'] },
                     'CheckEncounter': { type: 'check_encounter', args: [] },
@@ -519,14 +534,14 @@
                     'Draw': { type: 'draw_cards', args: ['PLAYER', 'AMOUNT'] },
                     'AddTags': { type: 'add_tags', args: ['AMOUNT'] },
                     'Sabotage': { type: 'sabotage', args: ['AMOUNT'] },
-                    'Damage': { type: 'damage', args: ['TYPE', 'AMOUNT'] },
+                    'Damage': { type: 'damage', args: ['AMOUNT', 'TYPE'] },
                     'Trash': { type: 'trash_card', args: ['CARD'] },
                     'EndTheRun': { type: 'end_run', args: [] },
                     'LoseClicks': { type: 'lose_clicks', args: ['PLAYER', 'AMOUNT'] },
                     'GainClicks': { type: 'gain_clicks', args: ['PLAYER', 'AMOUNT'] },
                     'Derez': { type: 'derez', args: ['CARD'] },
-                    'AddCounters': { type: 'add_counters', args: ['CARD', 'TYPE', 'AMOUNT'] },
-                    'RemoveCounters': { type: 'remove_counters', args: ['CARD', 'TYPE', 'AMOUNT'] },
+                    'AddCounters': { type: 'add_counters', args: ['AMOUNT', 'TYPE', 'CARD'] },
+                    'RemoveCounters': { type: 'remove_counters', args: ['AMOUNT', 'TYPE', 'CARD'] },
                     'Break': { type: 'break_subroutine', args: ['SUBROUTINE'] },
                     'Bypass': { type: 'bypass_ice', args: [] },
                     'BoostStrength': { type: 'boost_strength', args: ['CARD', 'AMOUNT'] },
@@ -535,12 +550,12 @@
                 for(const key in blockMappings) {
                     js.forBlock[blockMappings[key].type] = block => {
                         const mapping = blockMappings[key];
-                        const args = mapping.args.map(arg => {
-                            let val = js.valueToCode(block, arg, js.ORDER_ATOMIC);
-                            if (!val) {
-                                val = `'${block.getFieldValue(arg)}'`;
-                            }
-                            return val;
+                        const args = mapping.args.map(argName => {
+                             let val = js.valueToCode(block, argName, js.ORDER_ATOMIC);
+                             if(val === "") {
+                                val = `'${block.getFieldValue(argName)}'`;
+                             }
+                             return val;
                         }).join(', ');
 
                         if (block.outputConnection) {
@@ -549,6 +564,19 @@
                         return `${key}(${args});\n`;
                     };
                 }
+                 js.forBlock['game_variable_corp'] = block => {
+                    const server = block.getFieldValue('SERVER');
+                    return [`corp.${server}`, js.ORDER_ATOMIC];
+                 };
+                  js.forBlock['game_variable_runner'] = block => ['runner', js.ORDER_ATOMIC];
+                  js.forBlock['game_variable_this'] = block => ['this', js.ORDER_ATOMIC];
+                  js.forBlock['game_variable_accessing_card'] = block => ['accessingCard', js.ORDER_ATOMIC];
+                  js.forBlock['game_variable_attacked_server'] = block => ['attackedServer', js.ORDER_ATOMIC];
+                  js.forBlock['set_this_property'] = block => {
+                      const prop = block.getFieldValue('PROPERTY');
+                      const value = js.valueToCode(block, 'VALUE', js.ORDER_ATOMIC) || 'null';
+                      return `this.${prop} = ${value};\n`;
+                  };
             }
         });
     </script>
