@@ -309,7 +309,7 @@
                         }
                         
                         previousBlock = currentBlock;
-                        while (previousBlock.nextConnection && previousBlock.nextConnection.targetBlock()) {
+                        while (previousBlock && previousBlock.nextConnection && previousBlock.nextConnection.targetBlock()) {
                             previousBlock = previousBlock.nextConnection.targetBlock();
                         }
                     }
