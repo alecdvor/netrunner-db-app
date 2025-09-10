@@ -263,6 +263,7 @@
             }
             
             function initializeBlockly(codeToLoad = '') {
+                console.log("Initializing Blockly with code:", codeToLoad);
                 if (blocklyDiv.offsetHeight > 0) {
                     blocklyWorkspace = Blockly.inject(blocklyDiv, {
                         toolbox: toolbox,
@@ -274,9 +275,12 @@
 
                     if (codeToLoad) {
                         try {
+                            console.log("Parsing code to AST...");
                             const ast = acorn.parse(codeToLoad, {ecmaVersion: 2020});
+                            console.log("AST generated:", ast);
                             buildBlocksFromAst(ast.body);
                             blocklyWorkspace.render();
+                             console.log("Blockly workspace rendered.");
                         } catch (e) {
                             console.error("Failed to convert code to blocks:", e);
                             NetrunnerDB.showMessage("Could not load existing code into blocks.", "error");
@@ -295,16 +299,20 @@
             }
             
              function buildBlocksFromAst(statements, parentConnection = null) {
+                console.log("Building blocks from statements:", statements);
                 let previousBlock = null;
 
                 for (const stmt of statements) {
                     const currentBlock = processStatement(stmt);
+                     console.log("Processed statement, got block:", currentBlock);
 
                     if (currentBlock) {
                         if (parentConnection) {
+                            console.log("Connecting to parent connection.");
                             parentConnection.connect(currentBlock.previousConnection);
                             parentConnection = null; 
                         } else if (previousBlock && previousBlock.nextConnection) {
+                             console.log("Connecting to previous block.");
                             previousBlock.nextConnection.connect(currentBlock.previousConnection);
                         }
                         
@@ -317,6 +325,7 @@
             }
 
             function processStatement(stmt) {
+                 console.log("Processing statement:", stmt);
                 if (!stmt) return null;
                 switch(stmt.type) {
                     case 'ExpressionStatement': return processExpression(stmt.expression);
@@ -328,6 +337,7 @@
             }
 
              function processExpression(expr) {
+                console.log("Processing expression:", expr);
                 switch(expr.type) {
                     case 'CallExpression':
                         const block = createBlockFromCall(expr);
@@ -358,6 +368,7 @@
             }
 
             function processIfStatement(stmt) {
+                 console.log("Processing IfStatement:", stmt);
                 const ifBlock = blocklyWorkspace.newBlock('controls_if');
                 ifBlock.initSvg();
 
@@ -419,6 +430,7 @@
             }
 
             function createValueBlock(node) {
+                console.log("Creating value block for node:", node);
                 if (!node) return null;
                  let block;
                  switch(node.type) {
