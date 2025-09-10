@@ -370,7 +370,7 @@
                     buildBlocksFromAst(stmt.consequent.body, ifBlock.getInput('DO0').connection);
                 }
                 
-                let- i = 0;
+                let i = 0;
                 let alternate = stmt.alternate;
                 while (alternate && alternate.type === 'IfStatement') {
                     i++;
