@@ -232,19 +232,18 @@
                 const targetInput = dom.editorContent.querySelector(`[name="${fieldKey}"]`);
                 let existingCode = '';
                 if (targetInput && targetInput.value) {
+                    console.log("Raw input value:", targetInput.value);
                     try {
                         const text = targetInput.value;
                         const firstBrace = text.indexOf('{');
                         const lastBrace = text.lastIndexOf('}');
                         if (firstBrace !== -1 && lastBrace > firstBrace) {
                             const objectContent = text.substring(firstBrace + 1, lastBrace).trim();
+                             console.log("Object content:", objectContent);
                             const funcMatch = objectContent.match(/function\s*\([^\)]*\)\s*\{([\s\S]*)\}/);
+                             console.log("Function match:", funcMatch);
                             if(funcMatch && funcMatch[1]) {
-                                const funcBodyWithBrace = funcMatch[1];
-                                const lastFuncBrace = funcBodyWithBrace.lastIndexOf('}');
-                                if(lastFuncBrace !== -1) {
-                                    existingCode = funcBodyWithBrace.substring(0, lastFuncBrace).trim();
-                                }
+                                existingCode = funcMatch[1].trim();
                             }
                         }
                     } catch(e) { console.error("Could not parse existing code.", e); }
